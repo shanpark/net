@@ -1,2 +1,2 @@
 # net
-Network Framework for GO
+Network Framework for Go
