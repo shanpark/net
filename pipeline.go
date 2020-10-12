@@ -1,6 +1,17 @@
 package net
 
-type Handler func(in interface{}) interface{}
+type Inbounder interface {
+	Inbound(ctx *Context, in interface{}) (interface{}, error)
+}
+
+type Outbounder interface {
+	Outbound(ctx *Context, in interface{}) (interface{}, error)
+}
+
+type Handler interface {
+	Inbounder
+	Outbounder
+}
 
 type Pipeline struct {
 	handlers []Handler
@@ -10,10 +21,6 @@ func (pl *Pipeline) AddHandler(handler Handler) {
 	pl.handlers = append(pl.handlers, handler)
 }
 
-func Inbound(in interface{}) (interface{}, bool) {
-
-}
-
-func Outbound(out interface{}) (interface{}, bool) {
-
+func (pl *Pipeline) Handlers() []Handler {
+	return pl.handlers
 }

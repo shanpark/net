@@ -31,8 +31,8 @@ func (b *Buffer) Write(p []byte) (n int, err error) {
 	return n, nil
 }
 
-func (b *Buffer) Buffer() []byte {
-	return b.buf[b.wi:]
+func (b *Buffer) Readable() int {
+	return b.wi - b.ri
 }
 
 func (b *Buffer) Reserve(need int) {
@@ -42,19 +42,28 @@ func (b *Buffer) Reserve(need int) {
 	}
 }
 
+func (b *Buffer) Data() []byte {
+	return b.buf[b.ri:b.wi]
+}
+
+func (b *Buffer) Buffer() []byte {
+	return b.buf[b.wi:]
+}
+
 func (b *Buffer) Written(n int) {
 	b.wi += n
-	if (b.wi > len(buf))
+	if b.wi > len(b.buf) {
 		panic("buffer overflow")
+	}
 }
 
 // Commit applies the state of the buffer changed by Read().
-func (b *Buffer) Commit() {
+func (b *Buffer) commit() {
 	b.si = b.ri
 }
 
 // Rollback discards the state of the buffer changed by Read() as if you hadn't read it.
-func (b *Buffer) Rollback() {
+func (b *Buffer) rollback() {
 	b.ri = b.si
 }
 

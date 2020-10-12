@@ -5,13 +5,20 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"os"
 )
+
+type Service interface {
+	Pipeline() *Pipeline
+}
 
 type TCPServer struct {
 	address  string
+	pipeline *Pipeline
 	listener net.Listener
 	ctx      context.Context
 	cancel   context.CancelFunc
+	err      error
 }
 
 // NewTCPServer returns a TCPServer object.
@@ -23,6 +30,14 @@ func NewTCPServer() *TCPServer {
 func (s *TCPServer) SetAddress(address string) error {
 	s.address = address
 	return nil
+}
+
+func (s *TCPServer) SetPipeline(pipeline *Pipeline) {
+	s.pipeline = pipeline
+}
+
+func (s *TCPServer) Pipeline() *Pipeline {
+	return s.pipeline
 }
 
 func (s *TCPServer) Start() error {
@@ -54,14 +69,16 @@ func (s *TCPServer) listen(ctx context.Context) {
 
 	s.listener, err = net.Listen("tcp", s.address)
 	if err != nil {
-		return // TODO 에러처리
+		s.handleErr(err)
+		return
 	}
+
 	defer s.listener.Close()
 
 	connCh := make(chan net.Conn)
 	errCh := make(chan error)
 
-	for {
+	for s.err == nil {
 		go s.accept(ctx, connCh, errCh)
 
 		select {
@@ -70,7 +87,7 @@ func (s *TCPServer) listen(ctx context.Context) {
 		case conn := <-connCh:
 			s.handleConn(conn)
 		case err = <-errCh:
-			go s.handleErr(err)
+			s.handleErr(err)
 		}
 	}
 }
@@ -84,10 +101,18 @@ func (s *TCPServer) accept(ctx context.Context, connCh chan net.Conn, errCh chan
 }
 
 func (s *TCPServer) handleConn(conn net.Conn) {
-	ctx := NewContext(conn)
-	go ctx.Process()
+	nc := NewContext(s, conn)
+	go nc.process(s.ctx)
 }
 
 func (s *TCPServer) handleErr(err error) {
-	fmt.Printf("%v\n", err)
+	switch {
+	case err.(net.Error).Temporary():
+		fmt.Fprintf(os.Stdout, "temporary error")
+	case err.(net.Error).Timeout():
+		fmt.Fprintf(os.Stdout, "timeout error")
+	default:
+		s.err = err
+		s.Stop()
+	}
 }

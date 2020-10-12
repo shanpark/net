@@ -6,22 +6,31 @@ import (
 	"time"
 )
 
-func TestNewTCPServer(t *testing.T) {
-	tcpServer := NewTCPServer()
+type EchoHandler struct{}
 
-	tcpServer.SetAddress(":9999")
-	err := tcpServer.Start()
-	if err != nil {
-		fmt.Printf("%v\n", err)
-	}
+func (eh *EchoHandler) Inbound(ctx *Context, in interface{}) interface{} {
+	buf := make([]byte, 1024)
+	n, _ := in.(*Buffer).Read(buf)
+	ctx.Write(buf[:n])
+	return nil
+}
+
+func (eh *EchoHandler) Outbound(ctx *Context, in interface{}) interface{} {
+	return in
+}
+
+func TestNewTCPServer(t *testing.T) {
+
+	tcpServer := NewTCPServer()
+	go serverProcess(tcpServer)
 	time.Sleep(1 * time.Second)
 
 	tcpClient := NewTCPClient()
-	tcpClient.SetAddress(":9999")
-	err = tcpClient.Start()
-	if err != nil {
-		fmt.Printf("%v\n", err)
-	}
+	go clientProcess(tcpClient)
+	time.Sleep(1 * time.Second)
+
+	tcpServer.WaitForDone()
+
 	time.Sleep(1 * time.Second)
 
 	tcpClient.Stop()
@@ -30,29 +39,21 @@ func TestNewTCPServer(t *testing.T) {
 	time.Sleep(1 * time.Second)
 }
 
-func ExampleNewTCPServer() {
-	tcpServer := NewTCPServer()
-
-	tcpServer.SetAddress(":9999")
-	err := tcpServer.Start()
+func serverProcess(server *TCPServer) {
+	server.SetAddress(":9999")
+	err := server.Start()
 	if err != nil {
 		fmt.Printf("%v\n", err)
 	}
-	time.Sleep(1 * time.Second)
 
-	tcpClient := NewTCPClient()
-	tcpClient.SetAddress(":9999")
-	err = tcpClient.Start()
+	server.WaitForDone()
+}
+
+func clientProcess(client *TCPClient) {
+	client.SetAddress(":9999")
+	err := client.Start()
 	if err != nil {
 		fmt.Printf("%v\n", err)
 	}
-	time.Sleep(1 * time.Second)
-
-	tcpClient.Stop()
-	tcpServer.Stop()
-
-	time.Sleep(1 * time.Second)
-
-	// Output
-	//
+	client.WaitForDone()
 }

@@ -44,6 +44,10 @@ func (c *TCPClient) Stop() error {
 	return nil
 }
 
+func (c *TCPClient) WaitForDone() {
+	<-c.ctx.Done()
+}
+
 func (c *TCPClient) connect(ctx context.Context) {
 	var err error
 
