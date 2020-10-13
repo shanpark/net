@@ -8,15 +8,26 @@ import (
 
 type EchoHandler struct{}
 
-func (eh *EchoHandler) Inbound(ctx *Context, in interface{}) interface{} {
-	buf := make([]byte, 1024)
-	n, _ := in.(*Buffer).Read(buf)
-	ctx.Write(buf[:n])
+func (eh EchoHandler) OnRead(ctx *Context, in interface{}) (interface{}, error) {
+	fmt.Println("Server onRead()")
+	ctx.Write(in)
+	return nil, nil
+}
+
+type PrintHandler struct{}
+
+func (ph PrintHandler) OnConnect(ctx *Context) error {
+	fmt.Println("Client connected")
+	buffer := NewBuffer()
+	buffer.Write([]byte("Hello"))
+	ctx.Write(buffer)
 	return nil
 }
 
-func (eh *EchoHandler) Outbound(ctx *Context, in interface{}) interface{} {
-	return in
+func (ph PrintHandler) OnRead(ctx *Context, in interface{}) (interface{}, error) {
+	fmt.Printf("Client onRead(): %s\n", string(string(in.(*Buffer).Data())))
+	in.(*Buffer).Flush()
+	return nil, nil
 }
 
 func TestNewTCPServer(t *testing.T) {
@@ -40,7 +51,10 @@ func TestNewTCPServer(t *testing.T) {
 }
 
 func serverProcess(server *TCPServer) {
+	var echoHandler EchoHandler
+
 	server.SetAddress(":9999")
+	server.Pipeline().AddHandler(echoHandler)
 	err := server.Start()
 	if err != nil {
 		fmt.Printf("%v\n", err)
@@ -50,10 +64,13 @@ func serverProcess(server *TCPServer) {
 }
 
 func clientProcess(client *TCPClient) {
+	var printHandler PrintHandler
 	client.SetAddress(":9999")
+	client.Pipeline().AddHandler(printHandler)
 	err := client.Start()
 	if err != nil {
 		fmt.Printf("%v\n", err)
 	}
+
 	client.WaitForDone()
 }

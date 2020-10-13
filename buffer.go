@@ -35,6 +35,23 @@ func (b *Buffer) Readable() int {
 	return b.wi - b.ri
 }
 
+func (b *Buffer) Data() []byte {
+	return b.buf[b.ri:b.wi]
+}
+
+func (b *Buffer) DataConsume(n int) {
+	b.ri += n
+	if b.ri > b.wi {
+		panic("over consumed")
+	}
+}
+
+func (b *Buffer) Flush() {
+	b.si = 0
+	b.ri = 0
+	b.wi = 0
+}
+
 func (b *Buffer) Reserve(need int) {
 	space := len(b.buf) - b.wi
 	if need > space {
@@ -42,15 +59,11 @@ func (b *Buffer) Reserve(need int) {
 	}
 }
 
-func (b *Buffer) Data() []byte {
-	return b.buf[b.ri:b.wi]
-}
-
 func (b *Buffer) Buffer() []byte {
 	return b.buf[b.wi:]
 }
 
-func (b *Buffer) Written(n int) {
+func (b *Buffer) BufferConsume(n int) {
 	b.wi += n
 	if b.wi > len(b.buf) {
 		panic("buffer overflow")

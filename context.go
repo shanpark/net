@@ -33,34 +33,32 @@ func (nc *Context) Commit() {
 	nc.buffer.commit()
 }
 
-func (nc *Context) Write(out interface{}) {
+func (nc *Context) Write(out interface{}) error {
 	var err error
 	var n int
 
-	for {
-		for inx := len(nc.service.Pipeline().Handlers()) - 1; inx >= 0; inx-- {
-			handler := nc.service.Pipeline().Handlers()[inx]
-			if outb, ok := handler.(Outbounder); ok {
-				if out, err = outb.Outbound(nc, out); err != nil {
-					// Close Handler 또는 Error Handler를 호출하고 process()를 종료하면 어떨까?
-				}
-				if out == nil {
-					break
-				}
-			}
+	for inx := len(nc.service.Pipeline().WriteHandlers()) - 1; inx >= 0; inx-- {
+		handler := nc.service.Pipeline().WriteHandlers()[inx]
+		if out, err = handler.OnWrite(nc, out); err != nil {
+			// Close Handler 또는 Error Handler를 호출하고 process()를 종료하면 어떨까?
 		}
-
-		buffer := out.(*Buffer).Data()
-		written := 0
-		for written < len(buffer) {
-			n, err = nc.conn.Write(buffer[written:])
-			if err != nil {
-				// TODO error 처리.
-				break
-			}
-			written += n
+		if out == nil {
+			break
 		}
 	}
+
+	buffer := out.(*Buffer).Data()
+	written := 0
+	for written < len(buffer) {
+		n, err = nc.conn.Write(buffer[written:])
+		if err != nil {
+			// TODO error 처리.
+			return err
+		}
+		written += n
+	}
+
+	return nil
 }
 
 func (nc *Context) prepareRead() {
@@ -74,6 +72,12 @@ func (nc *Context) process(ctx context.Context) {
 
 	defer nc.conn.Close()
 
+	for _, handler := range nc.service.Pipeline().ConnectHandlers() {
+		if err = handler.OnConnect(nc); err != nil {
+			// Close Handler 또는 Error Handler를 호출하고 process()를 종료하면 어떨까?
+		}
+	}
+
 Loop:
 	for {
 		nc.prepareRead()
@@ -82,21 +86,19 @@ Loop:
 			// TODO error 처리.
 			return
 		}
-		nc.buffer.Written(n)
+		nc.buffer.BufferConsume(n)
 
 		var out interface{} = nc.buffer
-		for _, handler := range nc.service.Pipeline().Handlers() {
-			if inb, ok := handler.(Inbounder); ok {
-				if out, err = inb.Inbound(nc, out); err != nil {
-					// Close Handler 또는 Error Handler를 호출하고 process()를 종료하면 어떨까?
-				}
-				if nc.IsRollback() {
-					nc.buffer.rollback()
-					continue Loop
-				}
-				if out == nil {
-					break
-				}
+		for _, handler := range nc.service.Pipeline().ReadHandlers() {
+			if out, err = handler.OnRead(nc, out); err != nil {
+				// Close Handler 또는 Error Handler를 호출하고 process()를 종료하면 어떨까?
+			}
+			if nc.IsRollback() {
+				nc.buffer.rollback()
+				continue Loop
+			}
+			if out == nil {
+				break
 			}
 		}
 

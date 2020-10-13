@@ -24,6 +24,7 @@ type TCPServer struct {
 // NewTCPServer returns a TCPServer object.
 func NewTCPServer() *TCPServer {
 	server := new(TCPServer)
+	server.pipeline = new(Pipeline)
 	return server
 }
 
