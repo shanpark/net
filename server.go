@@ -33,8 +33,14 @@ func (s *TCPServer) SetAddress(address string) error {
 	return nil
 }
 
-func (s *TCPServer) SetPipeline(pipeline *Pipeline) {
-	s.pipeline = pipeline
+func (s *TCPServer) AddHandler(handlers ...interface{}) error {
+	for handler := range handlers {
+		if err := s.pipeline.AddHandler(handler); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (s *TCPServer) Pipeline() *Pipeline {
