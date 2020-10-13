@@ -40,7 +40,7 @@ func TestNewTCPServer(t *testing.T) {
 	go clientProcess(tcpClient)
 	time.Sleep(1 * time.Second)
 
-	time.Sleep(2 * time.Second)
+	time.Sleep(1 * time.Second)
 
 	tcpClient.Stop()
 	tcpServer.Stop()

@@ -45,8 +45,8 @@ func (c *TCPClient) Start() error {
 		return err
 	}
 
-	nc := NewContext(c, c.conn)
 	c.ctx, c.cancel = context.WithCancel(context.Background())
+	nc := NewContext(c, c.conn)
 	go nc.process(c.ctx)
 
 	return nil

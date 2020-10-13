@@ -24,7 +24,7 @@ func (nc *Context) Rollback() {
 	nc.rollback = true
 }
 
-func (nc *Context) IsRollback() bool {
+func (nc *Context) isRollback() bool {
 	return nc.rollback
 }
 
@@ -37,10 +37,9 @@ func (nc *Context) Write(out interface{}) error {
 	var err error
 	var n int
 
-	for inx := len(nc.service.Pipeline().WriteHandlers()) - 1; inx >= 0; inx-- {
-		handler := nc.service.Pipeline().WriteHandlers()[inx]
+	for _, handler := range nc.service.Pipeline().WriteHandlers() {
 		if out, err = handler.OnWrite(nc, out); err != nil {
-			// Close Handler 또는 Error Handler를 호출하고 process()를 종료하면 어떨까?
+			// TODO Close Handler 또는 Error Handler를 호출하고 process()를 종료하면 어떨까?
 		}
 		if out == nil {
 			break
@@ -93,7 +92,7 @@ Loop:
 			if out, err = handler.OnRead(nc, out); err != nil {
 				// Close Handler 또는 Error Handler를 호출하고 process()를 종료하면 어떨까?
 			}
-			if nc.IsRollback() {
+			if nc.isRollback() {
 				nc.buffer.rollback()
 				continue Loop
 			}

@@ -30,6 +30,11 @@ type Pipeline struct {
 	errorHandlers      []ErrorHandler
 }
 
+func NewPipeline() *Pipeline {
+	pipeline := new(Pipeline)
+	return pipeline
+}
+
 func (pl *Pipeline) AddHandler(handler interface{}) error {
 	var ok bool
 
@@ -39,7 +44,7 @@ func (pl *Pipeline) AddHandler(handler interface{}) error {
 		added = true
 	}
 	if _, ok = handler.(WriteHandler); ok {
-		pl.writeHandlers = append(pl.writeHandlers, handler.(WriteHandler))
+		pl.writeHandlers = prependWriteHandler(pl.writeHandlers, handler.(WriteHandler))
 		added = true
 	}
 	if _, ok = handler.(ConnectHandler); ok {
@@ -80,4 +85,11 @@ func (pl *Pipeline) DisconnectHandlers() []DisconnectHandler {
 
 func (pl *Pipeline) ErrorHandlers() []ErrorHandler {
 	return pl.errorHandlers
+}
+
+func prependWriteHandler(writeHandlers []WriteHandler, writeHandler WriteHandler) []WriteHandler {
+	writeHandlers = append(writeHandlers, nil)
+	copy(writeHandlers[1:], writeHandlers)
+	writeHandlers[0] = writeHandler
+	return writeHandlers
 }
