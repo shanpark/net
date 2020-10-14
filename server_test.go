@@ -40,7 +40,7 @@ func TestNewTCPServer(t *testing.T) {
 	go clientProcess(tcpClient)
 	time.Sleep(1 * time.Second)
 
-	time.Sleep(1 * time.Second)
+	// time.Sleep(100 * time.Second)
 
 	tcpClient.Stop()
 	tcpServer.Stop()
@@ -52,7 +52,7 @@ func serverProcess(server *TCPServer) {
 	var echoHandler EchoHandler
 
 	server.SetAddress(":9999")
-	server.Pipeline().AddHandler(echoHandler)
+	server.AddHandler(echoHandler)
 	err := server.Start()
 	if err != nil {
 		fmt.Printf("%v\n", err)
@@ -64,7 +64,8 @@ func serverProcess(server *TCPServer) {
 func clientProcess(client *TCPClient) {
 	var printHandler PrintHandler
 	client.SetAddress(":9999")
-	client.Pipeline().AddHandler(printHandler)
+	client.AddHandler(printHandler)
+	// client.pipeline().AddHandler(printHandler)
 	err := client.Start()
 	if err != nil {
 		fmt.Printf("%v\n", err)

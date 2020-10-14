@@ -6,24 +6,27 @@ import (
 	"net"
 )
 
+// Service represents a network service object.
 type Service interface {
-	Pipeline() *Pipeline
-	Stop() error
+	Error() error
+
+	pipeline() *pipeline
 }
 
 // A TCPServer represents a server object using tcp network.
 type TCPServer struct {
 	address  string
-	pipeline *Pipeline
+	pl       *pipeline
 	listener net.Listener
 	ctx      context.Context
 	cancel   context.CancelFunc
+	err      error
 }
 
 // NewTCPServer create a new TCPServer.
 func NewTCPServer() *TCPServer {
 	server := new(TCPServer)
-	server.pipeline = NewPipeline()
+	server.pl = new(pipeline)
 	return server
 }
 
@@ -36,17 +39,13 @@ func (s *TCPServer) SetAddress(address string) error {
 // AddHandler adds a handler for network events. A handler should implement at least one of interfaces ReadHandler, WriteHandler, ConnectHandler, DisconnectHandler, ErrorHandler.
 // Handlers are called in order and only in the case of WriteHandler are called in the reverse direction.
 func (s *TCPServer) AddHandler(handlers ...interface{}) error {
-	for handler := range handlers {
-		if err := s.pipeline.AddHandler(handler); err != nil {
+	for _, handler := range handlers {
+		if err := s.pl.AddHandler(handler); err != nil {
 			return err
 		}
 	}
 
 	return nil
-}
-
-func (s *TCPServer) Pipeline() *Pipeline {
-	return s.pipeline
 }
 
 // Start starts the service. TCPServer binds to the address and can receive connection request.
@@ -77,9 +76,19 @@ func (s *TCPServer) Stop() error {
 	return nil
 }
 
-// WaitForDone blocks until service ends.
+// WaitForDone blocks until service stops.
 func (s *TCPServer) WaitForDone() {
 	<-s.ctx.Done()
+}
+
+// Error returns an error that makes service stop.
+// For normal stop, returns nil.
+func (s *TCPServer) Error() error {
+	return s.err
+}
+
+func (s *TCPServer) pipeline() *pipeline {
+	return s.pl
 }
 
 func (s *TCPServer) process(ctx context.Context) {
@@ -87,9 +96,7 @@ func (s *TCPServer) process(ctx context.Context) {
 
 	var err error
 
-	connCh := make(chan net.Conn)
-	errCh := make(chan error)
-	go s.accept(ctx, connCh, errCh)
+	connCh, errCh := s.startAccept(ctx)
 
 	for {
 		select {
@@ -97,23 +104,30 @@ func (s *TCPServer) process(ctx context.Context) {
 			return
 
 		case conn := <-connCh:
-			nc := NewContext(s, conn)
+			nc := newContext(s, conn)
 			go nc.process(s.ctx)
 
 		case err = <-errCh:
 			switch {
-			case err.(net.Error).Temporary():
-				continue
-			case err.(net.Error).Timeout():
+			case err.(net.Error).Temporary() || err.(net.Error).Timeout():
+				connCh, errCh = s.startAccept(ctx) // restart accept routine
 				continue
 			default:
+				s.err = err
 				s.Stop()
 			}
 		}
 	}
 }
 
-func (s *TCPServer) accept(ctx context.Context, connCh chan net.Conn, errCh chan error) {
+func (s *TCPServer) startAccept(ctx context.Context) (<-chan net.Conn, <-chan error) {
+	connCh := make(chan net.Conn)
+	errCh := make(chan error)
+	go s.accept(ctx, connCh, errCh)
+	return connCh, errCh
+}
+
+func (s *TCPServer) accept(ctx context.Context, connCh chan<- net.Conn, errCh chan<- error) {
 	defer close(connCh)
 	defer close(errCh)
 
@@ -122,10 +136,10 @@ func (s *TCPServer) accept(ctx context.Context, connCh chan net.Conn, errCh chan
 		if err != nil {
 			select {
 			case <-ctx.Done():
-				return
 			default:
 				errCh <- err
 			}
+			return
 		}
 		connCh <- conn
 	}

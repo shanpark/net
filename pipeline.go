@@ -2,27 +2,32 @@ package net
 
 import "errors"
 
+// ReadHandler is the interface that wraps the Read event handler method.
 type ReadHandler interface {
 	OnRead(ctx *Context, in interface{}) (interface{}, error)
 }
 
+// WriteHandler is the interface that wraps the Write event handler method.
 type WriteHandler interface {
 	OnWrite(ctx *Context, out interface{}) (interface{}, error)
 }
 
+// ConnectHandler is the interface that wraps the Connect event handler method.
 type ConnectHandler interface {
 	OnConnect(ctx *Context) error
 }
 
+// DisconnectHandler is the interface that wraps the Disconnect event handler method.
 type DisconnectHandler interface {
-	OnDisconnect(ctx *Context) error
+	OnDisconnect(ctx *Context)
 }
 
+// ErrorHandler is the interface that wraps the Error event handler method.
 type ErrorHandler interface {
-	OnError(ctx *Context) error
+	OnError(ctx *Context, err error)
 }
 
-type Pipeline struct {
+type pipeline struct {
 	readHandlers       []ReadHandler
 	writeHandlers      []WriteHandler
 	connectHandlers    []ConnectHandler
@@ -30,12 +35,7 @@ type Pipeline struct {
 	errorHandlers      []ErrorHandler
 }
 
-func NewPipeline() *Pipeline {
-	pipeline := new(Pipeline)
-	return pipeline
-}
-
-func (pl *Pipeline) AddHandler(handler interface{}) error {
+func (pl *pipeline) AddHandler(handler interface{}) error {
 	var ok bool
 
 	added := false
@@ -65,26 +65,6 @@ func (pl *Pipeline) AddHandler(handler interface{}) error {
 	}
 
 	return nil
-}
-
-func (pl *Pipeline) ReadHandlers() []ReadHandler {
-	return pl.readHandlers
-}
-
-func (pl *Pipeline) WriteHandlers() []WriteHandler {
-	return pl.writeHandlers
-}
-
-func (pl *Pipeline) ConnectHandlers() []ConnectHandler {
-	return pl.connectHandlers
-}
-
-func (pl *Pipeline) DisconnectHandlers() []DisconnectHandler {
-	return pl.disconnectHandlers
-}
-
-func (pl *Pipeline) ErrorHandlers() []ErrorHandler {
-	return pl.errorHandlers
 }
 
 func prependWriteHandler(writeHandlers []WriteHandler, writeHandler WriteHandler) []WriteHandler {

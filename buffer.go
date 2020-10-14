@@ -18,12 +18,14 @@ func NewBuffer() *Buffer {
 	return buffer
 }
 
+// Read implements io.Reader interface.
 func (b *Buffer) Read(p []byte) (n int, err error) {
 	n = copy(p, b.buf[b.ri:b.wi])
 	b.ri += n
 	return n, nil
 }
 
+// Write implements io.Writer interface.
 func (b *Buffer) Write(p []byte) (n int, err error) {
 	b.Reserve(len(p))
 	n = copy(b.buf[b.wi:], p)
@@ -31,14 +33,19 @@ func (b *Buffer) Write(p []byte) (n int, err error) {
 	return n, nil
 }
 
+// Readable returns the number of bytes that can be read.
 func (b *Buffer) Readable() int {
 	return b.wi - b.ri
 }
 
+// Data returns the byte slice of data that can be read.
+// No allocation occurs. And this doesn't consume readable data from the buffer.
+// The returned data is still available from the buffer.
 func (b *Buffer) Data() []byte {
 	return b.buf[b.ri:b.wi]
 }
 
+// DataConsume consumes 'n' bytes from the buffer.
 func (b *Buffer) DataConsume(n int) {
 	b.ri += n
 	if b.ri > b.wi {
@@ -46,12 +53,14 @@ func (b *Buffer) DataConsume(n int) {
 	}
 }
 
+// Flush clears all data from the buffer.
 func (b *Buffer) Flush() {
 	b.si = 0
 	b.ri = 0
 	b.wi = 0
 }
 
+// Reserve reserves the writable space in the buffer.
 func (b *Buffer) Reserve(need int) {
 	space := len(b.buf) - b.wi
 	if need > space {
@@ -59,10 +68,14 @@ func (b *Buffer) Reserve(need int) {
 	}
 }
 
+// Buffer returns the byte slice of the writable space from the buffer.
+// No allocation occurs. And this doesn't consume writable space from the buffer.
+// If you writes some data to the slices, you should call BufferConsume() methods.
 func (b *Buffer) Buffer() []byte {
 	return b.buf[b.wi:]
 }
 
+// BufferConsume consumes 'n' bytes of the writable space from the buffer
 func (b *Buffer) BufferConsume(n int) {
 	b.wi += n
 	if b.wi > len(b.buf) {
@@ -71,12 +84,12 @@ func (b *Buffer) BufferConsume(n int) {
 }
 
 // Commit applies the state of the buffer changed by Read().
-func (b *Buffer) commit() {
+func (b *Buffer) Commit() {
 	b.si = b.ri
 }
 
 // Rollback discards the state of the buffer changed by Read() as if you hadn't read it.
-func (b *Buffer) rollback() {
+func (b *Buffer) Rollback() {
 	b.ri = b.si
 }
 
