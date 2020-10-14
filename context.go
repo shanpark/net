@@ -57,6 +57,11 @@ func (nc *Context) Write(out interface{}) error {
 	return nil
 }
 
+// Close requests context to close the connection of the context.
+func (nc *Context) Close() {
+	nc.service.cancelFunc()()
+}
+
 func newContext(service Service, conn net.Conn) *Context {
 	nc := new(Context)
 	nc.service = service
@@ -65,27 +70,25 @@ func newContext(service Service, conn net.Conn) *Context {
 	return nc
 }
 
-func (nc *Context) prepareRead() {
-	nc.rollback = false
-	nc.buffer.Reserve(4096)
-}
-
-func (nc *Context) startRead(ctx context.Context) (chan int, <-chan error) {
-	readCh := make(chan int)
+func (nc *Context) startRead(ctx context.Context, readCmdCh <-chan int) (<-chan int, <-chan error) {
+	dataReadyCh := make(chan int)
 	errCh := make(chan error)
-	go nc.read(ctx, readCh, errCh)
-	return readCh, errCh
+	go nc.read(ctx, readCmdCh, dataReadyCh, errCh)
+	return dataReadyCh, errCh
 }
 
-func (nc *Context) read(ctx context.Context, readCh chan int, errCh chan<- error) {
-	defer close(readCh)
+func (nc *Context) read(ctx context.Context, readCmdCh <-chan int, dataReadyCh chan<- int, errCh chan<- error) {
+	defer close(dataReadyCh)
 	defer close(errCh)
 
 	var err error
 	var n int
 
 	for {
-		<-readCh // wait for ready
+		if 0 == <-readCmdCh { // wait read command
+			return // readCmdCh closed. just return.
+		}
+
 		nc.prepareRead()
 		if n, err = nc.conn.Read(nc.buffer.Buffer()); err != nil {
 			select {
@@ -97,8 +100,13 @@ func (nc *Context) read(ctx context.Context, readCh chan int, errCh chan<- error
 		}
 		nc.buffer.BufferConsume(n)
 
-		readCh <- n
+		dataReadyCh <- n
 	}
+}
+
+func (nc *Context) prepareRead() {
+	nc.rollback = false
+	nc.buffer.Reserve(4096)
 }
 
 func (nc *Context) process(ctx context.Context) {
@@ -106,26 +114,27 @@ func (nc *Context) process(ctx context.Context) {
 
 	var err error
 
-	defer nc.handleDisconnect()
 	for _, handler := range nc.service.pipeline().connectHandlers {
 		if err = handler.OnConnect(nc); err != nil {
 			nc.handleError(err)
 			return
 		}
 	}
+	defer nc.handleDisconnect()
 
-	readCh, errCh := nc.startRead(ctx)
-	defer func() { readCh <- 0 }() // TODO 중간에 readCh가 바뀌는데 이렇게 closure로 실행시켜도 문제 없을까?
+	readCmdCh := make(chan int) // read command channel
+	defer close(readCmdCh)
 
+	dataReadyCh, errCh := nc.startRead(ctx, readCmdCh)
 Loop:
 	for {
-		readCh <- 0 // notify ready. readCh가 이미 닫혔다면 panic이 날 것이다. 문제 없는가?
+		readCmdCh <- 1 // send read command
 
 		select {
 		case <-ctx.Done():
 			return
 
-		case <-readCh:
+		case <-dataReadyCh:
 			var out interface{} = nc.buffer
 			for _, handler := range nc.service.pipeline().readHandlers {
 				if out, err = handler.OnRead(nc, out); err != nil {
@@ -144,8 +153,9 @@ Loop:
 
 		case err = <-errCh:
 			nc.handleError(err)
-			// TODO if not stopped continue read?
-			readCh, errCh = nc.startRead(ctx)
+			if nc.service.context() != nil {
+				dataReadyCh, errCh = nc.startRead(ctx, readCmdCh)
+			}
 		}
 	}
 }

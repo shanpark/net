@@ -3,6 +3,7 @@ package net
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 )
 
@@ -10,7 +11,6 @@ import (
 type TCPClient struct {
 	address string
 	pl      *pipeline
-	conn    net.Conn
 	ctx     context.Context
 	cancel  context.CancelFunc
 }
@@ -47,14 +47,15 @@ func (c *TCPClient) Start() error {
 	}
 
 	var err error
+	var conn net.Conn
 
-	c.conn, err = net.Dial("tcp", c.address)
+	conn, err = net.Dial("tcp", c.address)
 	if err != nil {
-		return err
+		return fmt.Errorf("net: Dial() failed - %v", err)
 	}
 
 	c.ctx, c.cancel = context.WithCancel(context.Background())
-	nc := newContext(c, c.conn)
+	nc := newContext(c, conn)
 	go nc.process(c.ctx)
 
 	return nil
@@ -75,10 +76,12 @@ func (c *TCPClient) WaitForDone() {
 	<-c.ctx.Done()
 }
 
-// Error returns an error that makes service stop.
-// For normal stop, returns nil.
-func (c *TCPClient) Error() error {
-	return nil
+func (c *TCPClient) context() context.Context {
+	return c.ctx
+}
+
+func (c *TCPClient) cancelFunc() context.CancelFunc {
+	return c.cancel
 }
 
 func (c *TCPClient) pipeline() *pipeline {

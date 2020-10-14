@@ -6,13 +6,6 @@ import (
 	"net"
 )
 
-// Service represents a network service object.
-type Service interface {
-	Error() error
-
-	pipeline() *pipeline
-}
-
 // A TCPServer represents a server object using tcp network.
 type TCPServer struct {
 	address  string
@@ -85,6 +78,14 @@ func (s *TCPServer) WaitForDone() {
 // For normal stop, returns nil.
 func (s *TCPServer) Error() error {
 	return s.err
+}
+
+func (s *TCPServer) context() context.Context {
+	return s.ctx
+}
+
+func (s *TCPServer) cancelFunc() context.CancelFunc {
+	return s.cancel
 }
 
 func (s *TCPServer) pipeline() *pipeline {
