@@ -1,10 +1,15 @@
 package net
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // Service represents a network service object.
 type Service interface {
-	pipeline() *pipeline
 	context() context.Context
-	cancelFunc() context.CancelFunc
+	cancel()
+	pipeline() *pipeline
+	readTimeout() time.Duration
+	writeTimeout() time.Duration
 }

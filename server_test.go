@@ -30,6 +30,7 @@ func (eh EchoHandler) OnDisconnect(ctx *Context) {
 
 func (eh EchoHandler) OnError(ctx *Context, err error) {
 	fmt.Printf("Error! - %v\n", err)
+	ctx.Close()
 }
 
 type PrintHandler struct{}
@@ -84,4 +85,58 @@ func clientProcess(client *TCPClient) {
 	}
 
 	client.WaitForDone()
+}
+
+type HTTPHandler struct{}
+
+func (ph HTTPHandler) OnConnect(ctx *Context) error {
+	fmt.Println("Client OnConnect:")
+	buffer := NewBuffer()
+	buffer.Write([]byte("GET / HTTP/1.1\n\n"))
+	ctx.Write(buffer)
+	return nil
+}
+
+func (ph HTTPHandler) OnRead(ctx *Context, in interface{}) (interface{}, error) {
+	fmt.Printf("Client OnRead: %s\n", string(string(in.(*Buffer).Data())))
+	ctx.Close()
+	return nil, nil
+}
+
+func ExampleNewTCPClient() {
+	tcpClient := NewTCPClient()
+	tcpClient.SetAddress("www.naver.com:80")
+	tcpClient.AddHandler(HTTPHandler{})
+	tcpClient.Start()
+	tcpClient.WaitForDone()
+	if tcpClient.context() == nil {
+		fmt.Println("stopped.")
+	}
+
+	// Output:
+	// stoppped.
+}
+
+type ToHandler struct{}
+
+func (ph ToHandler) OnTimeout(ctx *Context) error {
+	fmt.Printf("Client OnTimeout:\n")
+	ctx.Close()
+	return nil
+}
+
+func ExampleNewTCPClient_timeout() {
+	tcpClient := NewTCPClient()
+	tcpClient.SetAddress("192.168.1.123:80")
+	tcpClient.SetTimeout(1*time.Second, 1*time.Second)
+	tcpClient.AddHandler(ToHandler{})
+	tcpClient.Start()
+	tcpClient.WaitForDone()
+	if tcpClient.context() == nil {
+		fmt.Println("stopped.")
+	}
+
+	// Output:
+	// Client OnTimeout:
+	// stopped.
 }

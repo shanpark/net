@@ -5,26 +5,55 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"time"
 )
 
 // A TCPClient represents a client object using tcp network.
 type TCPClient struct {
-	address string
-	pl      *pipeline
-	ctx     context.Context
-	cancel  context.CancelFunc
+	address         string
+	pl              *pipeline
+	cctx            context.Context
+	cancelFunc      context.CancelFunc
+	optHandler      tcpConnOptHandler
+	readTimeoutDur  time.Duration
+	writeTimeoutDur time.Duration
 }
 
 // NewTCPClient create a new TCPClient.
 func NewTCPClient() *TCPClient {
 	client := new(TCPClient)
 	client.pl = new(pipeline)
+	client.AddHandler(client.optHandler)
 	return client
 }
 
 // SetAddress sets the remote address to connect. The address has the form "host:port".
 func (c *TCPClient) SetAddress(address string) error {
 	c.address = address
+	return nil
+}
+
+// SetTimeout sets the read and write timeout associated with the connection.
+func (c *TCPClient) SetTimeout(readTimeout time.Duration, writeTimeout time.Duration) error {
+	c.readTimeoutDur = readTimeout
+	c.writeTimeoutDur = writeTimeout
+	return nil
+}
+
+// SetNoDelay controls whether the operating system should delay packet transmission in hopes of sending fewer packets (Nagle's algorithm).
+// The default is true (no delay), meaning that data is sent as soon as possible after a Write.
+func (c *TCPClient) SetNoDelay(noDelay bool) error {
+	c.optHandler.noDelay = new(bool)
+	*c.optHandler.noDelay = noDelay
+	return nil
+}
+
+// SetKeepAlive sets whether the operating system should send keep-alive messages on the connection.
+// If period is zero, default value will be used.
+func (c *TCPClient) SetKeepAlive(keepAlive bool, period time.Duration) error {
+	c.optHandler.keepAlive = new(bool)
+	*c.optHandler.keepAlive = keepAlive
+	c.optHandler.keepAlivePeriod = period
 	return nil
 }
 
@@ -42,7 +71,7 @@ func (c *TCPClient) AddHandler(handlers ...interface{}) error {
 
 // Start starts the service. TCPClient connects to the remote address.
 func (c *TCPClient) Start() error {
-	if c.ctx != nil {
+	if c.cctx != nil {
 		return errors.New("net: client object is already started")
 	}
 
@@ -54,18 +83,17 @@ func (c *TCPClient) Start() error {
 		return fmt.Errorf("net: Dial() failed - %v", err)
 	}
 
-	c.ctx, c.cancel = context.WithCancel(context.Background())
+	c.cctx, c.cancelFunc = context.WithCancel(context.Background())
 	nc := newContext(c, conn)
-	go nc.process(c.ctx)
+	go nc.process(c.cctx)
 
 	return nil
 }
 
 // Stop stops the service. TCPClient closes the connection.
 func (c *TCPClient) Stop() error {
-	if c.ctx != nil {
+	if c.cctx != nil {
 		c.cancel()
-		c.ctx = nil
 	}
 
 	return nil
@@ -73,17 +101,26 @@ func (c *TCPClient) Stop() error {
 
 // WaitForDone blocks until service stops.
 func (c *TCPClient) WaitForDone() {
-	<-c.ctx.Done()
+	<-c.cctx.Done()
 }
 
 func (c *TCPClient) context() context.Context {
-	return c.ctx
+	return c.cctx
 }
 
-func (c *TCPClient) cancelFunc() context.CancelFunc {
-	return c.cancel
+func (c *TCPClient) cancel() {
+	c.cctx = nil
+	c.cancelFunc()
 }
 
 func (c *TCPClient) pipeline() *pipeline {
 	return c.pl
+}
+
+func (c *TCPClient) readTimeout() time.Duration {
+	return c.readTimeoutDur
+}
+
+func (c *TCPClient) writeTimeout() time.Duration {
+	return c.writeTimeoutDur
 }

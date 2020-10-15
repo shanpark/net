@@ -22,6 +22,11 @@ type DisconnectHandler interface {
 	OnDisconnect(ctx *Context)
 }
 
+// TimeoutHandler is the interface that wraps the Timeout event handler method.
+type TimeoutHandler interface {
+	OnTimeout(ctx *Context) error
+}
+
 // ErrorHandler is the interface that wraps the Error event handler method.
 type ErrorHandler interface {
 	OnError(ctx *Context, err error)
@@ -32,6 +37,7 @@ type pipeline struct {
 	writeHandlers      []WriteHandler
 	connectHandlers    []ConnectHandler
 	disconnectHandlers []DisconnectHandler
+	timeoutHandlers    []TimeoutHandler
 	errorHandlers      []ErrorHandler
 }
 
@@ -53,6 +59,10 @@ func (pl *pipeline) AddHandler(handler interface{}) error {
 	}
 	if _, ok = handler.(DisconnectHandler); ok {
 		pl.disconnectHandlers = append(pl.disconnectHandlers, handler.(DisconnectHandler))
+		added = true
+	}
+	if _, ok = handler.(TimeoutHandler); ok {
+		pl.timeoutHandlers = append(pl.timeoutHandlers, handler.(TimeoutHandler))
 		added = true
 	}
 	if _, ok = handler.(ErrorHandler); ok {

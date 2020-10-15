@@ -2,7 +2,9 @@ package net
 
 import (
 	"context"
+	"io"
 	"net"
+	"time"
 )
 
 // Context represents the current states of the network session.
@@ -15,28 +17,28 @@ type Context struct {
 }
 
 // Rollback requests that the status of the read operation be rolled back to its last commit state.
-func (nc *Context) Rollback() {
-	nc.rollback = true
+func (nctx *Context) Rollback() {
+	nctx.rollback = true
 }
 
 // IsRollback returns whether a rollback request has been made.
-func (nc *Context) IsRollback() bool {
-	return nc.rollback
+func (nctx *Context) IsRollback() bool {
+	return nctx.rollback
 }
 
 // Commit commits the current state of the read operation.
-func (nc *Context) Commit() {
-	nc.rollback = false
-	nc.buffer.Commit()
+func (nctx *Context) Commit() {
+	nctx.rollback = false
+	nctx.buffer.Commit()
 }
 
-// Write writes 'out' to the peer. This causes the WriteHandler chain to be called.
-func (nc *Context) Write(out interface{}) error {
+// Write writes parameter out to the peer. This causes the WriteHandler chain to be called.
+func (nctx *Context) Write(out interface{}) error {
 	var err error
 	var n int
 
-	for _, handler := range nc.service.pipeline().writeHandlers {
-		if out, err = handler.OnWrite(nc, out); err != nil {
+	for _, handler := range nctx.service.pipeline().writeHandlers {
+		if out, err = handler.OnWrite(nctx, out); err != nil {
 			return err
 		}
 		if out == nil {
@@ -47,7 +49,11 @@ func (nc *Context) Write(out interface{}) error {
 	buffer := out.(*Buffer).Data()
 	written := 0
 	for written < len(buffer) {
-		n, err = nc.conn.Write(buffer[written:])
+		if nctx.service.writeTimeout() > 0 {
+			nctx.conn.SetWriteDeadline(time.Now().Add(nctx.service.writeTimeout())) // set timeout
+		}
+
+		n, err = nctx.conn.Write(buffer[written:])
 		if err != nil {
 			return err
 		}
@@ -58,26 +64,26 @@ func (nc *Context) Write(out interface{}) error {
 }
 
 // Close requests context to close the connection of the context.
-func (nc *Context) Close() {
-	nc.service.cancelFunc()()
+func (nctx *Context) Close() {
+	nctx.service.cancel()
 }
 
 func newContext(service Service, conn net.Conn) *Context {
-	nc := new(Context)
-	nc.service = service
-	nc.conn = conn
-	nc.buffer = NewBuffer()
-	return nc
+	nctx := new(Context)
+	nctx.service = service
+	nctx.conn = conn
+	nctx.buffer = NewBuffer()
+	return nctx
 }
 
-func (nc *Context) startRead(ctx context.Context, readCmdCh <-chan int) (<-chan int, <-chan error) {
+func (nctx *Context) startRead(ctx context.Context, readCmdCh <-chan int) (<-chan int, <-chan error) {
 	dataReadyCh := make(chan int)
 	errCh := make(chan error)
-	go nc.read(ctx, readCmdCh, dataReadyCh, errCh)
+	go nctx.read(ctx, readCmdCh, dataReadyCh, errCh)
 	return dataReadyCh, errCh
 }
 
-func (nc *Context) read(ctx context.Context, readCmdCh <-chan int, dataReadyCh chan<- int, errCh chan<- error) {
+func (nctx *Context) read(ctx context.Context, readCmdCh <-chan int, dataReadyCh chan<- int, errCh chan<- error) {
 	defer close(dataReadyCh)
 	defer close(errCh)
 
@@ -89,8 +95,11 @@ func (nc *Context) read(ctx context.Context, readCmdCh <-chan int, dataReadyCh c
 			return // readCmdCh closed. just return.
 		}
 
-		nc.prepareRead()
-		if n, err = nc.conn.Read(nc.buffer.Buffer()); err != nil {
+		if nctx.service.readTimeout() > 0 {
+			nctx.conn.SetReadDeadline(time.Now().Add(nctx.service.readTimeout())) // set timeout
+		}
+		nctx.prepareRead()
+		if n, err = nctx.conn.Read(nctx.buffer.Buffer()); err != nil {
 			select {
 			case <-ctx.Done():
 			default:
@@ -98,34 +107,34 @@ func (nc *Context) read(ctx context.Context, readCmdCh <-chan int, dataReadyCh c
 			}
 			return
 		}
-		nc.buffer.BufferConsume(n)
+		nctx.buffer.BufferConsume(n)
 
 		dataReadyCh <- n
 	}
 }
 
-func (nc *Context) prepareRead() {
-	nc.rollback = false
-	nc.buffer.Reserve(4096)
+func (nctx *Context) prepareRead() {
+	nctx.rollback = false
+	nctx.buffer.Reserve(4096)
 }
 
-func (nc *Context) process(ctx context.Context) {
-	defer nc.conn.Close()
+func (nctx *Context) process(ctx context.Context) {
+	defer nctx.conn.Close()
 
 	var err error
 
-	for _, handler := range nc.service.pipeline().connectHandlers {
-		if err = handler.OnConnect(nc); err != nil {
-			nc.handleError(err)
+	for _, handler := range nctx.service.pipeline().connectHandlers {
+		if err = handler.OnConnect(nctx); err != nil {
+			nctx.handleError(err)
 			return
 		}
 	}
-	defer nc.handleDisconnect()
+	defer nctx.handleDisconnect()
 
 	readCmdCh := make(chan int) // read command channel
 	defer close(readCmdCh)
 
-	dataReadyCh, errCh := nc.startRead(ctx, readCmdCh)
+	dataReadyCh, errCh := nctx.startRead(ctx, readCmdCh)
 Loop:
 	for {
 		readCmdCh <- 1 // send read command
@@ -135,39 +144,60 @@ Loop:
 			return
 
 		case <-dataReadyCh:
-			var out interface{} = nc.buffer
-			for _, handler := range nc.service.pipeline().readHandlers {
-				if out, err = handler.OnRead(nc, out); err != nil {
-					nc.handleError(err)
-					return
+			for {
+				var out interface{} = nctx.buffer
+				var remain = nctx.buffer.Readable()
+				for _, handler := range nctx.service.pipeline().readHandlers {
+					if nctx.IsRollback() {
+						nctx.buffer.Rollback()
+					}
+					if out, err = handler.OnRead(nctx, out); err != nil {
+						nctx.handleError(err)
+						return
+					}
+					if out == nil {
+						break
+					}
 				}
-				if nc.IsRollback() {
-					nc.buffer.Rollback()
-					continue Loop
-				}
-				if out == nil {
+				nctx.Commit()
+				if (nctx.buffer.Readable() == 0) || (nctx.buffer.Readable() == remain) {
 					break
 				}
 			}
-			nc.Commit()
 
 		case err = <-errCh:
-			nc.handleError(err)
-			if nc.service.context() != nil {
-				dataReadyCh, errCh = nc.startRead(ctx, readCmdCh)
+			if err == io.EOF {
+				nctx.Close()
+			} else if err.(net.Error).Timeout() {
+				nctx.handleTimeout()
+			} else {
+				nctx.handleError(err)
+				if nctx.service.context() != nil {
+					dataReadyCh, errCh = nctx.startRead(ctx, readCmdCh)
+				}
 			}
 		}
 	}
 }
 
-func (nc *Context) handleDisconnect() {
-	for _, handler := range nc.service.pipeline().disconnectHandlers {
-		handler.OnDisconnect(nc)
+func (nctx *Context) handleDisconnect() {
+	for _, handler := range nctx.service.pipeline().disconnectHandlers {
+		handler.OnDisconnect(nctx)
 	}
 }
 
-func (nc *Context) handleError(err error) {
-	for _, handler := range nc.service.pipeline().errorHandlers {
-		handler.OnError(nc, err)
+func (nctx *Context) handleTimeout() {
+	var err error
+	for _, handler := range nctx.service.pipeline().timeoutHandlers {
+		if err = handler.OnTimeout(nctx); err != nil {
+			nctx.handleError(err)
+			break
+		}
+	}
+}
+
+func (nctx *Context) handleError(err error) {
+	for _, handler := range nctx.service.pipeline().errorHandlers {
+		handler.OnError(nctx, err)
 	}
 }
