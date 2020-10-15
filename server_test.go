@@ -109,9 +109,7 @@ func ExampleNewTCPClient() {
 	tcpClient.AddHandler(HTTPHandler{})
 	tcpClient.Start()
 	tcpClient.WaitForDone()
-	if tcpClient.context() == nil {
-		fmt.Println("stopped.")
-	}
+	fmt.Println("stopped.")
 
 	// Output:
 	// stoppped.

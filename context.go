@@ -7,6 +7,20 @@ import (
 	"time"
 )
 
+const (
+	eventNone = iota
+	eventConnect
+	eventDisconnect
+	eventRead
+	eventWrite
+	eventError
+)
+
+type event struct {
+	id  int
+	err error
+}
+
 // Context represents the current states of the network session.
 // And many requests are made through Context.
 type Context struct {
@@ -76,40 +90,52 @@ func newContext(service Service, conn net.Conn) *Context {
 	return nctx
 }
 
-func (nctx *Context) startRead(ctx context.Context, readCmdCh <-chan int) (<-chan int, <-chan error) {
-	dataReadyCh := make(chan int)
-	errCh := make(chan error)
-	go nctx.read(ctx, readCmdCh, dataReadyCh, errCh)
-	return dataReadyCh, errCh
+func (nctx *Context) process(ctx context.Context) {
+	defer nctx.conn.Close()
+
+	if !nctx.handleConnect() {
+		return
+	}
+	defer nctx.handleDisconnect()
+
+	go nctx.readLoop(ctx)
+
+	<-ctx.Done()
 }
 
-func (nctx *Context) read(ctx context.Context, readCmdCh <-chan int, dataReadyCh chan<- int, errCh chan<- error) {
-	defer close(dataReadyCh)
-	defer close(errCh)
-
+func (nctx *Context) readLoop(ctx context.Context) {
 	var err error
 	var n int
 
 	for {
-		if 0 == <-readCmdCh { // wait read command
-			return // readCmdCh closed. just return.
-		}
+		select {
+		case <-ctx.Done():
+			break
 
-		if nctx.service.readTimeout() > 0 {
-			nctx.conn.SetReadDeadline(time.Now().Add(nctx.service.readTimeout())) // set timeout
-		}
-		nctx.prepareRead()
-		if n, err = nctx.conn.Read(nctx.buffer.Buffer()); err != nil {
-			select {
-			case <-ctx.Done():
-			default:
-				errCh <- err
+		default:
+			if nctx.service.readTimeout() > 0 {
+				nctx.conn.SetReadDeadline(time.Now().Add(nctx.service.readTimeout())) // set timeout
 			}
-			return
-		}
-		nctx.buffer.BufferConsume(n)
+			nctx.prepareRead()
+			n, err = nctx.conn.Read(nctx.buffer.Buffer())
+			if err != nil {
+				select {
+				case <-ctx.Done():
+				default:
+					if err == io.EOF {
+						nctx.Close()
+					} else if err.(net.Error).Timeout() {
+						nctx.handleTimeout()
+					} else {
+						nctx.handleError(err)
+					}
+				}
+				return
+			}
+			nctx.buffer.BufferConsume(n)
 
-		dataReadyCh <- n
+			nctx.handleRead()
+		}
 	}
 }
 
@@ -118,71 +144,46 @@ func (nctx *Context) prepareRead() {
 	nctx.buffer.Reserve(4096)
 }
 
-func (nctx *Context) process(ctx context.Context) {
-	defer nctx.conn.Close()
-
+func (nctx *Context) handleConnect() bool {
 	var err error
-
 	for _, handler := range nctx.service.pipeline().connectHandlers {
 		if err = handler.OnConnect(nctx); err != nil {
 			nctx.handleError(err)
-			return
+			return false
 		}
 	}
-	defer nctx.handleDisconnect()
-
-	readCmdCh := make(chan int) // read command channel
-	defer close(readCmdCh)
-
-	dataReadyCh, errCh := nctx.startRead(ctx, readCmdCh)
-Loop:
-	for {
-		readCmdCh <- 1 // send read command
-
-		select {
-		case <-ctx.Done():
-			return
-
-		case <-dataReadyCh:
-			for {
-				var out interface{} = nctx.buffer
-				var remain = nctx.buffer.Readable()
-				for _, handler := range nctx.service.pipeline().readHandlers {
-					if nctx.IsRollback() {
-						nctx.buffer.Rollback()
-					}
-					if out, err = handler.OnRead(nctx, out); err != nil {
-						nctx.handleError(err)
-						return
-					}
-					if out == nil {
-						break
-					}
-				}
-				nctx.Commit()
-				if (nctx.buffer.Readable() == 0) || (nctx.buffer.Readable() == remain) {
-					break
-				}
-			}
-
-		case err = <-errCh:
-			if err == io.EOF {
-				nctx.Close()
-			} else if err.(net.Error).Timeout() {
-				nctx.handleTimeout()
-			} else {
-				nctx.handleError(err)
-				if nctx.service.context() != nil {
-					dataReadyCh, errCh = nctx.startRead(ctx, readCmdCh)
-				}
-			}
-		}
-	}
+	return true
 }
 
 func (nctx *Context) handleDisconnect() {
 	for _, handler := range nctx.service.pipeline().disconnectHandlers {
 		handler.OnDisconnect(nctx)
+	}
+}
+
+func (nctx *Context) handleRead() {
+	var err error
+ReadLoop:
+	for {
+		var out interface{} = nctx.buffer
+		var remain = nctx.buffer.Readable()
+		for _, handler := range nctx.service.pipeline().readHandlers {
+			out, err = handler.OnRead(nctx, out)
+			if nctx.IsRollback() || (err != nil) {
+				if nctx.IsRollback() {
+					nctx.buffer.Rollback()
+				}
+				if err != nil {
+					nctx.handleError(err)
+				}
+				nctx.Commit() // Commit() initialize rollback flag.
+				break ReadLoop
+			}
+		}
+		nctx.Commit()
+		if (nctx.buffer.Readable() == 0) || (nctx.buffer.Readable() == remain) {
+			break
+		}
 	}
 }
 
