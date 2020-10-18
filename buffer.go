@@ -9,9 +9,9 @@ type Buffer struct {
 }
 
 // NewBuffer returns a buffer.
-func NewBuffer() *Buffer {
+func NewBuffer(size int) *Buffer {
 	buffer := new(Buffer)
-	buffer.buf = make([]byte, 4096)
+	buffer.buf = make([]byte, size)
 	buffer.si = 0
 	buffer.ri = 0
 	buffer.wi = 0

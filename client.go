@@ -17,6 +17,7 @@ type TCPClient struct {
 	optHandler      tcpConnOptHandler
 	readTimeoutDur  time.Duration
 	writeTimeoutDur time.Duration
+	doneCh          <-chan struct{}
 }
 
 // NewTCPClient create a new TCPClient.
@@ -84,8 +85,9 @@ func (c *TCPClient) Start() error {
 	}
 
 	c.cctx, c.cancelFunc = context.WithCancel(context.Background())
+	c.doneCh = c.cctx.Done()
 	nc := newContext(c, conn)
-	go nc.process(c.cctx)
+	go nc.process()
 
 	return nil
 }
@@ -101,7 +103,7 @@ func (c *TCPClient) Stop() error {
 
 // WaitForDone blocks until service stops.
 func (c *TCPClient) WaitForDone() {
-	<-c.cctx.Done()
+	<-c.done()
 }
 
 func (c *TCPClient) context() context.Context {
@@ -123,4 +125,8 @@ func (c *TCPClient) readTimeout() time.Duration {
 
 func (c *TCPClient) writeTimeout() time.Duration {
 	return c.writeTimeoutDur
+}
+
+func (c *TCPClient) done() <-chan struct{} {
+	return c.doneCh
 }

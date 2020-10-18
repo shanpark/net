@@ -12,4 +12,5 @@ type Service interface {
 	pipeline() *pipeline
 	readTimeout() time.Duration
 	writeTimeout() time.Duration
+	done() <-chan struct{}
 }

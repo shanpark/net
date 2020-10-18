@@ -17,6 +17,7 @@ type TCPServer struct {
 	optHandler      tcpConnOptHandler
 	readTimeoutDur  time.Duration
 	writeTimeoutDur time.Duration
+	doneCh          <-chan struct{}
 	err             error
 }
 
@@ -79,19 +80,22 @@ func (s *TCPServer) Start() error {
 	var err error
 
 	s.cctx, s.cancelFunc = context.WithCancel(context.Background())
+	s.doneCh = s.cctx.Done()
 	s.listener, err = net.Listen("tcp", s.address)
 	if err != nil {
 		return err
 	}
 
-	go s.process(s.cctx)
+	go s.process()
 	return nil
 }
 
 // Stop stops the service. TCPServer closes all connections
 func (s *TCPServer) Stop() error {
 	if s.cctx != nil {
-		s.cancel()
+		s.cctx = nil
+		s.cancelFunc()
+		// s.cancel()
 	}
 
 	return nil
@@ -99,7 +103,7 @@ func (s *TCPServer) Stop() error {
 
 // WaitForDone blocks until service stops.
 func (s *TCPServer) WaitForDone() {
-	<-s.cctx.Done()
+	<-s.doneCh
 }
 
 // Error returns an error that makes service stop.
@@ -108,77 +112,40 @@ func (s *TCPServer) Error() error {
 	return s.err
 }
 
-func (s *TCPServer) context() context.Context {
-	return s.cctx
-}
-
-func (s *TCPServer) cancel() {
-	s.cctx = nil
-	s.cancelFunc()
-}
-
-func (s *TCPServer) pipeline() *pipeline {
-	return s.pl
-}
-
-func (s *TCPServer) readTimeout() time.Duration {
-	return s.readTimeoutDur
-}
-
-func (s *TCPServer) writeTimeout() time.Duration {
-	return s.writeTimeoutDur
-}
-
-func (s *TCPServer) process(ctx context.Context) {
+func (s *TCPServer) process() {
 	defer s.listener.Close()
 
-	var err error
+	go s.acceptLoop()
 
-	connCh, errCh := s.startAccept(ctx)
+	<-s.doneCh
+}
 
+func (s *TCPServer) acceptLoop() {
 	for {
 		select {
-		case <-ctx.Done():
+		case <-s.doneCh:
 			return
 
-		case conn := <-connCh:
-			nc := newContext(s, conn)
-			go nc.process(s.cctx)
-
-		case err = <-errCh:
-			switch {
-			case err.(net.Error).Temporary() || err.(net.Error).Timeout():
-				connCh, errCh = s.startAccept(ctx) // restart accept routine
-				continue
-			default:
-				s.err = err
-				s.Stop()
+		default:
+			conn, err := s.listener.Accept()
+			if err != nil {
+				select {
+				case <-s.doneCh:
+				default:
+					switch {
+					case err.(net.Error).Temporary() || err.(net.Error).Timeout():
+						continue
+					default:
+						s.err = err
+						s.Stop()
+					}
+				}
+				return
 			}
+
+			child := s.newChildService(context.WithCancel(s.cctx))
+			nctx := newContext(child, conn)
+			go nctx.process()
 		}
-	}
-}
-
-func (s *TCPServer) startAccept(ctx context.Context) (<-chan net.Conn, <-chan error) {
-	connCh := make(chan net.Conn)
-	errCh := make(chan error)
-	go s.accept(ctx, connCh, errCh)
-	return connCh, errCh
-}
-
-func (s *TCPServer) accept(ctx context.Context, connCh chan<- net.Conn, errCh chan<- error) {
-	defer close(connCh)
-	defer close(errCh)
-
-	for {
-		conn, err := s.listener.Accept()
-		if err != nil {
-			select {
-			case <-ctx.Done():
-			default:
-				errCh <- err
-			}
-			return
-		}
-		connCh <- conn
 	}
 }

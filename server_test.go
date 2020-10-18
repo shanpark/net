@@ -37,7 +37,7 @@ type PrintHandler struct{}
 
 func (ph PrintHandler) OnConnect(ctx *Context) error {
 	fmt.Println("Client OnConnect")
-	buffer := NewBuffer()
+	buffer := NewBuffer(256)
 	buffer.Write([]byte("Hello"))
 	ctx.Write(buffer)
 	return nil
@@ -91,7 +91,7 @@ type HTTPHandler struct{}
 
 func (ph HTTPHandler) OnConnect(ctx *Context) error {
 	fmt.Println("Client OnConnect:")
-	buffer := NewBuffer()
+	buffer := NewBuffer(256)
 	buffer.Write([]byte("GET / HTTP/1.1\n\n"))
 	ctx.Write(buffer)
 	return nil

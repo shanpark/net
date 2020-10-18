@@ -1,7 +1,6 @@
 package net
 
 import (
-	"context"
 	"io"
 	"net"
 	"time"
@@ -86,11 +85,11 @@ func newContext(service Service, conn net.Conn) *Context {
 	nctx := new(Context)
 	nctx.service = service
 	nctx.conn = conn
-	nctx.buffer = NewBuffer()
+	nctx.buffer = NewBuffer(4096)
 	return nctx
 }
 
-func (nctx *Context) process(ctx context.Context) {
+func (nctx *Context) process() {
 	defer nctx.conn.Close()
 
 	if !nctx.handleConnect() {
@@ -98,29 +97,26 @@ func (nctx *Context) process(ctx context.Context) {
 	}
 	defer nctx.handleDisconnect()
 
-	go nctx.readLoop(ctx)
+	go nctx.readLoop()
 
-	<-ctx.Done()
+	<-nctx.service.done()
 }
 
-func (nctx *Context) readLoop(ctx context.Context) {
-	var err error
-	var n int
-
+func (nctx *Context) readLoop() {
 	for {
 		select {
-		case <-ctx.Done():
-			break
+		case <-nctx.service.done():
+			return
 
 		default:
 			if nctx.service.readTimeout() > 0 {
 				nctx.conn.SetReadDeadline(time.Now().Add(nctx.service.readTimeout())) // set timeout
 			}
 			nctx.prepareRead()
-			n, err = nctx.conn.Read(nctx.buffer.Buffer())
+			n, err := nctx.conn.Read(nctx.buffer.Buffer())
 			if err != nil {
 				select {
-				case <-ctx.Done():
+				case <-nctx.service.done():
 				default:
 					if err == io.EOF {
 						nctx.Close()
@@ -145,9 +141,8 @@ func (nctx *Context) prepareRead() {
 }
 
 func (nctx *Context) handleConnect() bool {
-	var err error
 	for _, handler := range nctx.service.pipeline().connectHandlers {
-		if err = handler.OnConnect(nctx); err != nil {
+		if err := handler.OnConnect(nctx); err != nil {
 			nctx.handleError(err)
 			return false
 		}
@@ -162,9 +157,9 @@ func (nctx *Context) handleDisconnect() {
 }
 
 func (nctx *Context) handleRead() {
-	var err error
 ReadLoop:
 	for {
+		var err error
 		var out interface{} = nctx.buffer
 		var remain = nctx.buffer.Readable()
 		for _, handler := range nctx.service.pipeline().readHandlers {
@@ -188,9 +183,8 @@ ReadLoop:
 }
 
 func (nctx *Context) handleTimeout() {
-	var err error
 	for _, handler := range nctx.service.pipeline().timeoutHandlers {
-		if err = handler.OnTimeout(nctx); err != nil {
+		if err := handler.OnTimeout(nctx); err != nil {
 			nctx.handleError(err)
 			break
 		}
