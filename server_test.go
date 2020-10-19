@@ -128,11 +128,13 @@ func ExampleNewTCPClient_timeout() {
 	tcpClient.SetAddress("192.168.1.123:80")
 	tcpClient.SetTimeout(1*time.Second, 1*time.Second)
 	tcpClient.AddHandler(ToHandler{})
-	tcpClient.Start()
-	tcpClient.WaitForDone()
-	if tcpClient.context() == nil {
-		fmt.Println("stopped.")
+	if err := tcpClient.Start(); err != nil {
+		fmt.Printf("%v\n", err)
+		return
 	}
+	tcpClient.WaitForDone()
+
+	fmt.Println("stopped.")
 
 	// Output:
 	// Client OnTimeout:

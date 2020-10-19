@@ -10,11 +10,12 @@ import (
 // A TCPServer represents a server object using tcp network.
 type TCPServer struct {
 	address    string
-	listener   net.Listener
 	cctx       context.Context
 	cancelFunc context.CancelFunc
 	doneCh     <-chan struct{}
-	err        error
+
+	listener net.Listener // for Server
+	err      error        //
 
 	pl              *pipeline         // for childService
 	optHandler      tcpConnOptHandler //
@@ -74,7 +75,7 @@ func (s *TCPServer) AddHandler(handlers ...interface{}) error {
 
 // Start starts the service. TCPServer binds to the address and can receive connection request.
 func (s *TCPServer) Start() error {
-	if s.cctx != nil {
+	if s.isStarted() {
 		return errors.New("net: server object is already started")
 	}
 
@@ -93,7 +94,7 @@ func (s *TCPServer) Start() error {
 
 // Stop stops the service. TCPServer closes all connections
 func (s *TCPServer) Stop() error {
-	if s.cctx != nil {
+	if s.isStarted() {
 		s.cctx = nil
 		s.cancelFunc()
 	}
@@ -147,5 +148,18 @@ func (s *TCPServer) acceptLoop() {
 			nctx := newContext(child, conn, defaultQueueSize)
 			go nctx.process()
 		}
+	}
+}
+
+func (s *TCPServer) isStarted() bool {
+	if s.doneCh == nil {
+		return false
+	}
+
+	select {
+	case <-s.doneCh:
+		return false
+	default:
+		return true
 	}
 }

@@ -10,15 +10,15 @@ import (
 
 // A TCPClient represents a client object using tcp network.
 type TCPClient struct {
-	address         string
-	pl              *pipeline
-	cctx            context.Context
-	cancelFunc      context.CancelFunc
+	address    string
+	cancelFunc context.CancelFunc
+	doneCh     <-chan struct{}
+
 	nctx            *Context
+	pl              *pipeline
 	optHandler      tcpConnOptHandler
 	readTimeoutDur  time.Duration
 	writeTimeoutDur time.Duration
-	doneCh          <-chan struct{}
 }
 
 // NewTCPClient create a new TCPClient.
@@ -73,7 +73,7 @@ func (c *TCPClient) AddHandler(handlers ...interface{}) error {
 
 // Start starts the service. TCPClient connects to the remote address.
 func (c *TCPClient) Start() error {
-	if c.cctx != nil {
+	if c.isStarted() {
 		return errors.New("net: client object is already started")
 	}
 
@@ -82,8 +82,9 @@ func (c *TCPClient) Start() error {
 		return fmt.Errorf("net: Dial() failed - %v", err)
 	}
 
-	c.cctx, c.cancelFunc = context.WithCancel(context.Background())
-	c.doneCh = c.cctx.Done()
+	var cctx context.Context
+	cctx, c.cancelFunc = context.WithCancel(context.Background())
+	c.doneCh = cctx.Done()
 	nctx := newContext(c, conn, defaultQueueSize)
 	go nctx.process()
 	c.nctx = nctx
@@ -93,7 +94,7 @@ func (c *TCPClient) Start() error {
 
 // Stop stops the service. TCPClient closes the connection.
 func (c *TCPClient) Stop() error {
-	if c.cctx != nil {
+	if c.isStarted() {
 		c.cancel()
 	}
 
@@ -105,21 +106,13 @@ func (c *TCPClient) WaitForDone() {
 	<-c.done()
 }
 
+// Write writes parameter out to the peer. This causes the WriteHandler chain to be called.
 func (c *TCPClient) Write(out interface{}) error {
 	if c.nctx == nil {
 		return errors.New("net: connection is not made")
 	}
 
 	return c.nctx.Write(out)
-}
-
-func (c *TCPClient) context() context.Context {
-	return c.cctx
-}
-
-func (c *TCPClient) cancel() {
-	c.cctx = nil
-	c.cancelFunc()
 }
 
 func (c *TCPClient) pipeline() *pipeline {
@@ -134,6 +127,23 @@ func (c *TCPClient) writeTimeout() time.Duration {
 	return c.writeTimeoutDur
 }
 
+func (c *TCPClient) cancel() {
+	c.cancelFunc()
+}
+
 func (c *TCPClient) done() <-chan struct{} {
 	return c.doneCh
+}
+
+func (c *TCPClient) isStarted() bool {
+	if c.doneCh == nil {
+		return false
+	}
+
+	select {
+	case <-c.doneCh:
+		return false
+	default:
+		return true
+	}
 }
