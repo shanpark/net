@@ -1,6 +1,8 @@
 package net
 
-import "sync"
+import (
+	"sync"
+)
 
 // A Buffer is a variable-sized buffer of bytes with Read, Write, Commit, Rollback methods.
 type Buffer struct {
