@@ -1,11 +1,14 @@
 package net
 
+import "sync"
+
 // A Buffer is a variable-sized buffer of bytes with Read, Write, Commit, Rollback methods.
 type Buffer struct {
-	buf []byte
-	si  int
-	ri  int
-	wi  int
+	buf  []byte
+	si   int
+	ri   int
+	wi   int
+	lock sync.RWMutex
 }
 
 // NewBuffer returns a buffer.
@@ -20,6 +23,9 @@ func NewBuffer(size int) *Buffer {
 
 // Read implements io.Reader interface.
 func (b *Buffer) Read(p []byte) (n int, err error) {
+	b.lock.Lock()
+	defer b.lock.Unlock()
+
 	n = copy(p, b.buf[b.ri:b.wi])
 	b.ri += n
 	return n, nil
@@ -27,7 +33,10 @@ func (b *Buffer) Read(p []byte) (n int, err error) {
 
 // Write implements io.Writer interface.
 func (b *Buffer) Write(p []byte) (n int, err error) {
-	b.Reserve(len(p))
+	b.lock.Lock()
+	defer b.lock.Unlock()
+
+	b.reserve(len(p))
 	n = copy(b.buf[b.wi:], p)
 	b.wi += n
 	return n, nil
@@ -35,6 +44,9 @@ func (b *Buffer) Write(p []byte) (n int, err error) {
 
 // Readable returns the number of bytes that can be read.
 func (b *Buffer) Readable() int {
+	b.lock.RLock()
+	defer b.lock.RUnlock()
+
 	return b.wi - b.ri
 }
 
@@ -42,19 +54,28 @@ func (b *Buffer) Readable() int {
 // No allocation occurs. And this doesn't consume readable data from the buffer.
 // The returned data is still available from the buffer.
 func (b *Buffer) Data() []byte {
+	b.lock.RLock()
+	defer b.lock.RUnlock()
+
 	return b.buf[b.ri:b.wi]
 }
 
 // DataConsume consumes 'n' bytes from the buffer.
 func (b *Buffer) DataConsume(n int) {
+	b.lock.Lock()
+	defer b.lock.Unlock()
+
 	b.ri += n
 	if b.ri > b.wi {
 		panic("over consumed")
 	}
 }
 
-// Flush clears all data from the buffer.
-func (b *Buffer) Flush() {
+// Clear clears all data from the buffer.
+func (b *Buffer) Clear() {
+	b.lock.Lock()
+	defer b.lock.Unlock()
+
 	b.si = 0
 	b.ri = 0
 	b.wi = 0
@@ -62,21 +83,27 @@ func (b *Buffer) Flush() {
 
 // Reserve reserves the writable space in the buffer.
 func (b *Buffer) Reserve(need int) {
-	space := len(b.buf) - b.wi
-	if need > space {
-		b.grow(need - space)
-	}
+	b.lock.Lock()
+	defer b.lock.Unlock()
+
+	b.reserve(need)
 }
 
 // Buffer returns the byte slice of the writable space from the buffer.
 // No allocation occurs. And this doesn't consume writable space from the buffer.
 // If you writes some data to the slices, you should call BufferConsume() methods.
 func (b *Buffer) Buffer() []byte {
+	b.lock.RLock()
+	defer b.lock.RUnlock()
+
 	return b.buf[b.wi:]
 }
 
 // BufferConsume consumes 'n' bytes of the writable space from the buffer
 func (b *Buffer) BufferConsume(n int) {
+	b.lock.Lock()
+	defer b.lock.Unlock()
+
 	b.wi += n
 	if b.wi > len(b.buf) {
 		panic("buffer overflow")
@@ -85,12 +112,25 @@ func (b *Buffer) BufferConsume(n int) {
 
 // Commit applies the state of the buffer changed by Read().
 func (b *Buffer) Commit() {
+	b.lock.Lock()
+	defer b.lock.Unlock()
+
 	b.si = b.ri
 }
 
 // Rollback discards the state of the buffer changed by Read() as if you hadn't read it.
 func (b *Buffer) Rollback() {
+	b.lock.Lock()
+	defer b.lock.Unlock()
+
 	b.ri = b.si
+}
+
+func (b *Buffer) reserve(need int) {
+	space := len(b.buf) - b.wi
+	if need > space {
+		b.grow(need - space)
+	}
 }
 
 func (b *Buffer) grow(need int) {

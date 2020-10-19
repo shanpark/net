@@ -14,6 +14,7 @@ type TCPClient struct {
 	pl              *pipeline
 	cctx            context.Context
 	cancelFunc      context.CancelFunc
+	nctx            *Context
 	optHandler      tcpConnOptHandler
 	readTimeoutDur  time.Duration
 	writeTimeoutDur time.Duration
@@ -76,18 +77,16 @@ func (c *TCPClient) Start() error {
 		return errors.New("net: client object is already started")
 	}
 
-	var err error
-	var conn net.Conn
-
-	conn, err = net.Dial("tcp", c.address)
+	conn, err := net.Dial("tcp", c.address)
 	if err != nil {
 		return fmt.Errorf("net: Dial() failed - %v", err)
 	}
 
 	c.cctx, c.cancelFunc = context.WithCancel(context.Background())
 	c.doneCh = c.cctx.Done()
-	nc := newContext(c, conn)
-	go nc.process()
+	nctx := newContext(c, conn, defaultQueueSize)
+	go nctx.process()
+	c.nctx = nctx
 
 	return nil
 }
@@ -104,6 +103,14 @@ func (c *TCPClient) Stop() error {
 // WaitForDone blocks until service stops.
 func (c *TCPClient) WaitForDone() {
 	<-c.done()
+}
+
+func (c *TCPClient) Write(out interface{}) error {
+	if c.nctx == nil {
+		return errors.New("net: connection is not made")
+	}
+
+	return c.nctx.Write(out)
 }
 
 func (c *TCPClient) context() context.Context {

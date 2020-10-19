@@ -5,15 +5,15 @@ import (
 	"time"
 )
 
-type ChildService struct {
+type childService struct {
 	s          *TCPServer
 	cctx       context.Context
 	cancelFunc context.CancelFunc
 	doneCh     <-chan struct{}
 }
 
-func (s *TCPServer) newChildService(cctx context.Context, cancelFunc context.CancelFunc) *ChildService {
-	child := new(ChildService)
+func (s *TCPServer) newChildService(cctx context.Context, cancelFunc context.CancelFunc) *childService {
+	child := new(childService)
 	child.s = s
 	child.cctx = cctx
 	child.cancelFunc = cancelFunc
@@ -21,27 +21,27 @@ func (s *TCPServer) newChildService(cctx context.Context, cancelFunc context.Can
 	return child
 }
 
-func (cs *ChildService) context() context.Context {
+func (cs *childService) context() context.Context {
 	return cs.cctx
 }
 
-func (cs *ChildService) cancel() {
+func (cs *childService) cancel() {
 	cs.cctx = nil
 	cs.cancelFunc()
 }
 
-func (cs *ChildService) pipeline() *pipeline {
+func (cs *childService) pipeline() *pipeline {
 	return cs.s.pl
 }
 
-func (cs *ChildService) readTimeout() time.Duration {
+func (cs *childService) readTimeout() time.Duration {
 	return cs.s.readTimeoutDur
 }
 
-func (cs *ChildService) writeTimeout() time.Duration {
+func (cs *childService) writeTimeout() time.Duration {
 	return cs.s.writeTimeoutDur
 }
 
-func (cs *ChildService) done() <-chan struct{} {
+func (cs *childService) done() <-chan struct{} {
 	return cs.doneCh
 }

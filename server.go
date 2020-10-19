@@ -9,16 +9,17 @@ import (
 
 // A TCPServer represents a server object using tcp network.
 type TCPServer struct {
-	address         string
-	pl              *pipeline
-	listener        net.Listener
-	cctx            context.Context
-	cancelFunc      context.CancelFunc
-	optHandler      tcpConnOptHandler
-	readTimeoutDur  time.Duration
-	writeTimeoutDur time.Duration
-	doneCh          <-chan struct{}
-	err             error
+	address    string
+	listener   net.Listener
+	cctx       context.Context
+	cancelFunc context.CancelFunc
+	doneCh     <-chan struct{}
+	err        error
+
+	pl              *pipeline         // for childService
+	optHandler      tcpConnOptHandler //
+	readTimeoutDur  time.Duration     //
+	writeTimeoutDur time.Duration     //
 }
 
 // NewTCPServer create a new TCPServer.
@@ -95,7 +96,6 @@ func (s *TCPServer) Stop() error {
 	if s.cctx != nil {
 		s.cctx = nil
 		s.cancelFunc()
-		// s.cancel()
 	}
 
 	return nil
@@ -144,7 +144,7 @@ func (s *TCPServer) acceptLoop() {
 			}
 
 			child := s.newChildService(context.WithCancel(s.cctx))
-			nctx := newContext(child, conn)
+			nctx := newContext(child, conn, defaultQueueSize)
 			go nctx.process()
 		}
 	}

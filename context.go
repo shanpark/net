@@ -15,18 +15,21 @@ const (
 	eventError
 )
 
+const defaultQueueSize = 32
+
 type event struct {
-	id  int
-	err error
+	id    int
+	param interface{}
 }
 
 // Context represents the current states of the network session.
 // And many requests are made through Context.
 type Context struct {
-	service  Service
-	conn     net.Conn
-	buffer   *Buffer
-	rollback bool
+	service    Service
+	conn       net.Conn
+	eventQueue chan event
+	buffer     *Buffer
+	rollback   bool
 }
 
 // Rollback requests that the status of the read operation be rolled back to its last commit state.
@@ -47,32 +50,7 @@ func (nctx *Context) Commit() {
 
 // Write writes parameter out to the peer. This causes the WriteHandler chain to be called.
 func (nctx *Context) Write(out interface{}) error {
-	var err error
-	var n int
-
-	for _, handler := range nctx.service.pipeline().writeHandlers {
-		if out, err = handler.OnWrite(nctx, out); err != nil {
-			return err
-		}
-		if out == nil {
-			break
-		}
-	}
-
-	buffer := out.(*Buffer).Data()
-	written := 0
-	for written < len(buffer) {
-		if nctx.service.writeTimeout() > 0 {
-			nctx.conn.SetWriteDeadline(time.Now().Add(nctx.service.writeTimeout())) // set timeout
-		}
-
-		n, err = nctx.conn.Write(buffer[written:])
-		if err != nil {
-			return err
-		}
-		written += n
-	}
-
+	nctx.eventQueue <- event{eventWrite, out}
 	return nil
 }
 
@@ -81,10 +59,11 @@ func (nctx *Context) Close() {
 	nctx.service.cancel()
 }
 
-func newContext(service Service, conn net.Conn) *Context {
+func newContext(service Service, conn net.Conn, queueSize int) *Context {
 	nctx := new(Context)
 	nctx.service = service
 	nctx.conn = conn
+	nctx.eventQueue = make(chan event, queueSize)
 	nctx.buffer = NewBuffer(4096)
 	return nctx
 }
@@ -99,10 +78,52 @@ func (nctx *Context) process() {
 
 	go nctx.readLoop()
 
-	<-nctx.service.done()
+	var err error
+EventLoop:
+	for {
+		select {
+		case <-nctx.service.done():
+			return
+		case evt := <-nctx.eventQueue:
+			switch evt.id {
+			case eventRead:
+				nctx.handleRead()
+
+			case eventWrite:
+				out := evt.param
+				for _, handler := range nctx.service.pipeline().writeHandlers {
+					if out, err = handler.OnWrite(nctx, out); err != nil {
+						nctx.handleError(err)
+						continue EventLoop
+					}
+				}
+
+				buffer, ok := out.(*Buffer)
+				if !ok {
+					nctx.handleError(err)
+					continue EventLoop
+				}
+				bytes := buffer.Data()
+				written := 0
+				for written < len(bytes) {
+					if nctx.service.writeTimeout() > 0 {
+						nctx.conn.SetWriteDeadline(time.Now().Add(nctx.service.writeTimeout())) // set timeout
+					}
+
+					n, err := nctx.conn.Write(bytes[written:])
+					if err != nil {
+						nctx.handleError(err)
+						continue EventLoop
+					}
+					written += n
+				}
+			}
+		}
+	}
 }
 
 func (nctx *Context) readLoop() {
+	readBuf := make([]byte, 4096)
 	for {
 		select {
 		case <-nctx.service.done():
@@ -112,8 +133,7 @@ func (nctx *Context) readLoop() {
 			if nctx.service.readTimeout() > 0 {
 				nctx.conn.SetReadDeadline(time.Now().Add(nctx.service.readTimeout())) // set timeout
 			}
-			nctx.prepareRead()
-			n, err := nctx.conn.Read(nctx.buffer.Buffer())
+			n, err := nctx.conn.Read(readBuf)
 			if err != nil {
 				select {
 				case <-nctx.service.done():
@@ -126,11 +146,11 @@ func (nctx *Context) readLoop() {
 						nctx.handleError(err)
 					}
 				}
-				return
+				continue
 			}
-			nctx.buffer.BufferConsume(n)
+			nctx.buffer.Write(readBuf[:n])
 
-			nctx.handleRead()
+			nctx.eventQueue <- event{eventRead, nil}
 		}
 	}
 }
