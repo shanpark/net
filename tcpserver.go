@@ -17,7 +17,7 @@ type TCPServer struct {
 	listener net.Listener // for Server
 	err      error        //
 
-	pl              *pipeline         // for childService
+	pl              *tcpPipeline      // for childService
 	optHandler      tcpConnOptHandler //
 	readTimeoutDur  time.Duration     //
 	writeTimeoutDur time.Duration     //
@@ -26,7 +26,7 @@ type TCPServer struct {
 // NewTCPServer create a new TCPServer.
 func NewTCPServer() *TCPServer {
 	server := new(TCPServer)
-	server.pl = new(pipeline)
+	server.pl = new(tcpPipeline)
 	server.AddHandler(server.optHandler)
 	return server
 }
@@ -75,7 +75,7 @@ func (s *TCPServer) AddHandler(handlers ...interface{}) error {
 
 // Start starts the service. TCPServer binds to the address and can receive connection request.
 func (s *TCPServer) Start() error {
-	if s.isStarted() {
+	if s.isRunning() {
 		return errors.New("net: server object is already started")
 	}
 
@@ -94,7 +94,7 @@ func (s *TCPServer) Start() error {
 
 // Stop stops the service. TCPServer closes all connections
 func (s *TCPServer) Stop() error {
-	if s.isStarted() {
+	if s.isRunning() {
 		s.cctx = nil
 		s.cancelFunc()
 	}
@@ -151,7 +151,15 @@ func (s *TCPServer) acceptLoop() {
 	}
 }
 
-func (s *TCPServer) isStarted() bool {
+func (s *TCPServer) newChildService(cctx context.Context, cancelFunc context.CancelFunc) *tcpChildService {
+	child := new(tcpChildService)
+	child.s = s
+	child.cancelFunc = cancelFunc
+	child.doneCh = cctx.Done()
+	return child
+}
+
+func (s *TCPServer) isRunning() bool {
 	if s.doneCh == nil {
 		return false
 	}

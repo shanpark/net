@@ -4,35 +4,36 @@ import "errors"
 
 // ReadHandler is the interface that wraps the Read event handler method.
 type ReadHandler interface {
-	OnRead(ctx *Context, in interface{}) (interface{}, error)
+	OnRead(ctx *TCPContext, in interface{}) (interface{}, error)
 }
 
 // WriteHandler is the interface that wraps the Write event handler method.
 type WriteHandler interface {
-	OnWrite(ctx *Context, out interface{}) (interface{}, error)
+	OnWrite(ctx *TCPContext, out interface{}) (interface{}, error)
 }
 
 // ConnectHandler is the interface that wraps the Connect event handler method.
 type ConnectHandler interface {
-	OnConnect(ctx *Context) error
+	OnConnect(ctx *TCPContext) error
 }
 
 // DisconnectHandler is the interface that wraps the Disconnect event handler method.
+// OnDisconnect method is the only method called after the service is stopped.
 type DisconnectHandler interface {
-	OnDisconnect(ctx *Context)
+	OnDisconnect(ctx *TCPContext)
 }
 
 // TimeoutHandler is the interface that wraps the Timeout event handler method.
 type TimeoutHandler interface {
-	OnTimeout(ctx *Context) error
+	OnTimeout(ctx *TCPContext) error
 }
 
 // ErrorHandler is the interface that wraps the Error event handler method.
 type ErrorHandler interface {
-	OnError(ctx *Context, err error)
+	OnError(ctx *TCPContext, err error)
 }
 
-type pipeline struct {
+type tcpPipeline struct {
 	readHandlers       []ReadHandler
 	writeHandlers      []WriteHandler
 	connectHandlers    []ConnectHandler
@@ -41,7 +42,7 @@ type pipeline struct {
 	errorHandlers      []ErrorHandler
 }
 
-func (pl *pipeline) AddHandler(handler interface{}) error {
+func (pl *tcpPipeline) AddHandler(handler interface{}) error {
 	var ok bool
 
 	added := false
@@ -50,7 +51,7 @@ func (pl *pipeline) AddHandler(handler interface{}) error {
 		added = true
 	}
 	if _, ok = handler.(WriteHandler); ok {
-		pl.writeHandlers = prependWriteHandler(pl.writeHandlers, handler.(WriteHandler))
+		pl.prependWriteHandler(handler.(WriteHandler))
 		added = true
 	}
 	if _, ok = handler.(ConnectHandler); ok {
@@ -77,9 +78,8 @@ func (pl *pipeline) AddHandler(handler interface{}) error {
 	return nil
 }
 
-func prependWriteHandler(writeHandlers []WriteHandler, writeHandler WriteHandler) []WriteHandler {
-	writeHandlers = append(writeHandlers, nil)
-	copy(writeHandlers[1:], writeHandlers)
-	writeHandlers[0] = writeHandler
-	return writeHandlers
+func (pl *tcpPipeline) prependWriteHandler(writeHandler WriteHandler) {
+	pl.writeHandlers = append(pl.writeHandlers, nil)
+	copy(pl.writeHandlers[1:], pl.writeHandlers)
+	pl.writeHandlers[0] = writeHandler
 }

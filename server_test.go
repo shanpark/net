@@ -8,34 +8,34 @@ import (
 
 type EchoHandler struct{}
 
-func (eh EchoHandler) OnConnect(ctx *Context) error {
+func (eh EchoHandler) OnConnect(ctx *TCPContext) error {
 	fmt.Println("Server OnConnect()")
 	return nil
 }
 
-func (eh EchoHandler) OnRead(ctx *Context, in interface{}) (interface{}, error) {
+func (eh EchoHandler) OnRead(ctx *TCPContext, in interface{}) (interface{}, error) {
 	fmt.Println("Server OnRead()")
 	ctx.Write(in)
 	return nil, nil
 }
 
-func (eh EchoHandler) OnWrite(ctx *Context, out interface{}) (interface{}, error) {
+func (eh EchoHandler) OnWrite(ctx *TCPContext, out interface{}) (interface{}, error) {
 	fmt.Println("Server OnWrite()")
 	return out, nil
 }
 
-func (eh EchoHandler) OnDisconnect(ctx *Context) {
+func (eh EchoHandler) OnDisconnect(ctx *TCPContext) {
 	fmt.Println("Server OnDisconnect()")
 }
 
-func (eh EchoHandler) OnError(ctx *Context, err error) {
+func (eh EchoHandler) OnError(ctx *TCPContext, err error) {
 	fmt.Printf("Error! - %v\n", err)
 	ctx.Close()
 }
 
 type PrintHandler struct{}
 
-func (ph PrintHandler) OnConnect(ctx *Context) error {
+func (ph PrintHandler) OnConnect(ctx *TCPContext) error {
 	fmt.Println("Client OnConnect")
 	buffer := NewBuffer(256)
 	buffer.Write([]byte("Hello"))
@@ -43,7 +43,7 @@ func (ph PrintHandler) OnConnect(ctx *Context) error {
 	return nil
 }
 
-func (ph PrintHandler) OnRead(ctx *Context, in interface{}) (interface{}, error) {
+func (ph PrintHandler) OnRead(ctx *TCPContext, in interface{}) (interface{}, error) {
 	fmt.Printf("Client OnRead: %s\n", string(string(in.(*Buffer).Data())))
 	ctx.Close()
 	return nil, nil
@@ -89,35 +89,48 @@ func clientProcess(client *TCPClient) {
 
 type HTTPHandler struct{}
 
-func (ph HTTPHandler) OnConnect(ctx *Context) error {
+func (ph HTTPHandler) OnConnect(ctx *TCPContext) error {
 	fmt.Println("Client OnConnect:")
 	buffer := NewBuffer(256)
 	buffer.Write([]byte("GET / HTTP/1.1\n\n"))
-	ctx.Write(buffer)
+	if ctx.Write(buffer) != nil {
+		fmt.Println("ctx.Write(buffer) error !!")
+	}
 	return nil
 }
 
-func (ph HTTPHandler) OnRead(ctx *Context, in interface{}) (interface{}, error) {
-	fmt.Printf("Client OnRead: %s\n", string(string(in.(*Buffer).Data())))
+func (ph HTTPHandler) OnRead(ctx *TCPContext, in interface{}) (interface{}, error) {
+	fmt.Printf("Client OnRead: %d\n", len(in.(*Buffer).Data()))
 	ctx.Close()
 	return nil, nil
 }
 
+func (ph HTTPHandler) OnError(ctx *TCPContext, err error) {
+	fmt.Println("Client OnError: ", err)
+	ctx.Close()
+}
+
+func (ph HTTPHandler) OnDisconnect(ctx *TCPContext) {
+	fmt.Println("Client OnDisconnect")
+}
+
 func ExampleNewTCPClient() {
 	tcpClient := NewTCPClient()
-	tcpClient.SetAddress("www.naver.com:80")
+	tcpClient.SetAddress("192.168.1.123:80")
 	tcpClient.AddHandler(HTTPHandler{})
 	tcpClient.Start()
 	tcpClient.WaitForDone()
 	fmt.Println("stopped.")
 
+	time.Sleep(1 * time.Second)
+
 	// Output:
-	// stoppped.
+	// stopped.
 }
 
 type ToHandler struct{}
 
-func (ph ToHandler) OnTimeout(ctx *Context) error {
+func (ph ToHandler) OnTimeout(ctx *TCPContext) error {
 	fmt.Printf("Client OnTimeout:\n")
 	ctx.Close()
 	return nil

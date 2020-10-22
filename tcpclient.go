@@ -14,8 +14,8 @@ type TCPClient struct {
 	cancelFunc context.CancelFunc
 	doneCh     <-chan struct{}
 
-	nctx            *Context
-	pl              *pipeline
+	nctx            *TCPContext
+	pl              *tcpPipeline
 	optHandler      tcpConnOptHandler
 	readTimeoutDur  time.Duration
 	writeTimeoutDur time.Duration
@@ -24,7 +24,7 @@ type TCPClient struct {
 // NewTCPClient create a new TCPClient.
 func NewTCPClient() *TCPClient {
 	client := new(TCPClient)
-	client.pl = new(pipeline)
+	client.pl = new(tcpPipeline)
 	client.AddHandler(client.optHandler)
 	return client
 }
@@ -73,7 +73,7 @@ func (c *TCPClient) AddHandler(handlers ...interface{}) error {
 
 // Start starts the service. TCPClient connects to the remote address.
 func (c *TCPClient) Start() error {
-	if c.isStarted() {
+	if c.isRunning() {
 		return errors.New("net: client object is already started")
 	}
 
@@ -94,7 +94,7 @@ func (c *TCPClient) Start() error {
 
 // Stop stops the service. TCPClient closes the connection.
 func (c *TCPClient) Stop() error {
-	if c.isStarted() {
+	if c.isRunning() {
 		c.cancel()
 	}
 
@@ -115,7 +115,7 @@ func (c *TCPClient) Write(out interface{}) error {
 	return c.nctx.Write(out)
 }
 
-func (c *TCPClient) pipeline() *pipeline {
+func (c *TCPClient) pipeline() *tcpPipeline {
 	return c.pl
 }
 
@@ -135,7 +135,7 @@ func (c *TCPClient) done() <-chan struct{} {
 	return c.doneCh
 }
 
-func (c *TCPClient) isStarted() bool {
+func (c *TCPClient) isRunning() bool {
 	if c.doneCh == nil {
 		return false
 	}
