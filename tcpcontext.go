@@ -67,11 +67,11 @@ func newContext(svc tcpService, conn net.Conn, queueSize int) *TCPContext {
 
 func (nctx *TCPContext) process() {
 	defer nctx.conn.Close()
+	defer nctx.handleDisconnect()
 
 	if !nctx.handleConnect() {
 		return
 	}
-	defer nctx.handleDisconnect()
 
 	go nctx.readLoop()
 

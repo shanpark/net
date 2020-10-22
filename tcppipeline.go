@@ -18,7 +18,7 @@ type ConnectHandler interface {
 }
 
 // DisconnectHandler is the interface that wraps the Disconnect event handler method.
-// OnDisconnect method is the only method called after the service is stopped.
+// OnDisconnect method is the only method can be called after the service is stopped.
 type DisconnectHandler interface {
 	OnDisconnect(ctx *TCPContext)
 }
