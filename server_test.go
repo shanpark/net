@@ -1,6 +1,7 @@
 package net
 
 import (
+	"crypto/tls"
 	"fmt"
 	"testing"
 	"time"
@@ -100,7 +101,9 @@ func (ph HTTPHandler) OnConnect(ctx *TCPContext) error {
 }
 
 func (ph HTTPHandler) OnRead(ctx *TCPContext, in interface{}) (interface{}, error) {
-	fmt.Printf("Client OnRead: %d\n", len(in.(*Buffer).Data()))
+	data := in.(*Buffer).Data()
+	fmt.Printf("Client OnRead: %d\n", len(data))
+	fmt.Println(string(data))
 	ctx.Close()
 	return nil, nil
 }
@@ -116,10 +119,26 @@ func (ph HTTPHandler) OnDisconnect(ctx *TCPContext) {
 
 func ExampleNewTCPClient() {
 	tcpClient := NewTCPClient()
-	tcpClient.SetAddress("192.168.1.123:80")
+	tcpClient.SetAddress("www.google.com:80")
 	tcpClient.AddHandler(HTTPHandler{})
 	tcpClient.Start()
 	tcpClient.WaitForDone()
+	fmt.Println("stopped.")
+
+	time.Sleep(1 * time.Second)
+
+	// Output:
+	// stopped.
+}
+
+func ExampleNewTLSClient() {
+	// config := &tls.Config{InsecureSkipVerify: true}
+	config := &tls.Config{ServerName: "google.com"}
+	tlsClient := NewTLSClient(config)
+	tlsClient.SetAddress("www.google.com:443")
+	tlsClient.AddHandler(HTTPHandler{})
+	tlsClient.Start()
+	tlsClient.WaitForDone()
 	fmt.Println("stopped.")
 
 	time.Sleep(1 * time.Second)
