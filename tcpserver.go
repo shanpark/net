@@ -17,7 +17,7 @@ type TCPServer struct {
 	listener net.Listener // for Server
 	err      error        //
 
-	pl              *tcpPipeline      // for childService
+	pl              *soPipeline       // for childService
 	optHandler      tcpConnOptHandler //
 	readTimeoutDur  time.Duration     //
 	writeTimeoutDur time.Duration     //
@@ -26,7 +26,7 @@ type TCPServer struct {
 // NewTCPServer create a new TCPServer.
 func NewTCPServer() *TCPServer {
 	server := new(TCPServer)
-	server.pl = new(tcpPipeline)
+	server.pl = new(soPipeline)
 	server.AddHandler(server.optHandler)
 	return server
 }
@@ -88,7 +88,7 @@ func (s *TCPServer) Start() error {
 		return err
 	}
 
-	go s.process()
+	go s.process(s)
 	return nil
 }
 
@@ -113,10 +113,22 @@ func (s *TCPServer) Error() error {
 	return s.err
 }
 
-func (s *TCPServer) process() {
+func (s *TCPServer) pipeline() *soPipeline {
+	return s.pl
+}
+
+func (s *TCPServer) readTimeout() time.Duration {
+	return s.readTimeoutDur
+}
+
+func (s *TCPServer) writeTimeout() time.Duration {
+	return s.writeTimeoutDur
+}
+
+func (s *TCPServer) process(acceptor soAcceptor) {
 	defer s.listener.Close()
 
-	go s.acceptLoop()
+	go acceptor.acceptLoop()
 
 	<-s.doneCh
 }
@@ -151,8 +163,8 @@ func (s *TCPServer) acceptLoop() {
 	}
 }
 
-func (s *TCPServer) newChildService(cctx context.Context, cancelFunc context.CancelFunc) *tcpChildService {
-	child := new(tcpChildService)
+func (s *TCPServer) newChildService(cctx context.Context, cancelFunc context.CancelFunc) *soChildService {
+	child := new(soChildService)
 	child.s = s
 	child.cancelFunc = cancelFunc
 	child.doneCh = cctx.Done()

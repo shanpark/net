@@ -18,7 +18,7 @@ type TLSClient struct {
 func NewTLSClient(config *tls.Config) *TLSClient {
 	client := new(TLSClient)
 	client.config = config
-	client.pl = new(tcpPipeline)
+	client.pl = new(soPipeline)
 	client.AddHandler(client.optHandler)
 	return client
 }
@@ -34,7 +34,7 @@ func (c *TLSClient) Start() error {
 		return fmt.Errorf("net: Dial() failed - %v", err)
 	}
 
-	conn = tls.Client(conn, c.config) // only difference with TCPClient.
+	conn = tls.Client(conn, c.config) // only difference from TCP
 
 	var cctx context.Context
 	cctx, c.cancelFunc = context.WithCancel(context.Background())

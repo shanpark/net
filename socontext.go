@@ -19,10 +19,10 @@ type event struct {
 	param interface{}
 }
 
-// TCPContext represents the current states of the TCP network session.
+// SoContext represents the current states of the TCP network session.
 // And some requests are made through TCPContext.
-type TCPContext struct {
-	svc        tcpService
+type SoContext struct {
+	svc        soObject
 	conn       net.Conn
 	eventQueue chan event
 	buffer     *Buffer
@@ -30,34 +30,34 @@ type TCPContext struct {
 }
 
 // Rollback requests that the status of the read operation be rolled back to its last commit state.
-func (nctx *TCPContext) Rollback() {
+func (nctx *SoContext) Rollback() {
 	nctx.rollback = true
 }
 
 // IsRollback returns whether a rollback request has been made.
-func (nctx *TCPContext) IsRollback() bool {
+func (nctx *SoContext) IsRollback() bool {
 	return nctx.rollback
 }
 
 // Commit commits the current state of the read operation.
-func (nctx *TCPContext) Commit() {
+func (nctx *SoContext) Commit() {
 	nctx.rollback = false
 	nctx.buffer.Commit()
 }
 
 // Write writes parameter out to the peer. This causes the WriteHandler chain to be called.
-func (nctx *TCPContext) Write(out interface{}) error {
+func (nctx *SoContext) Write(out interface{}) error {
 	nctx.eventQueue <- event{eventWrite, out}
 	return nil
 }
 
 // Close requests context to close the connection of the context.
-func (nctx *TCPContext) Close() {
+func (nctx *SoContext) Close() {
 	nctx.svc.cancel()
 }
 
-func newContext(svc tcpService, conn net.Conn, queueSize int) *TCPContext {
-	nctx := new(TCPContext)
+func newContext(svc soObject, conn net.Conn, queueSize int) *SoContext {
+	nctx := new(SoContext)
 	nctx.svc = svc
 	nctx.conn = conn
 	nctx.eventQueue = make(chan event, queueSize)
@@ -65,7 +65,7 @@ func newContext(svc tcpService, conn net.Conn, queueSize int) *TCPContext {
 	return nctx
 }
 
-func (nctx *TCPContext) process() {
+func (nctx *SoContext) process() {
 	defer nctx.conn.Close()
 	defer nctx.handleDisconnect()
 
@@ -90,7 +90,7 @@ func (nctx *TCPContext) process() {
 	}
 }
 
-func (nctx *TCPContext) readLoop() {
+func (nctx *SoContext) readLoop() {
 	readBuf := make([]byte, 4096)
 	for {
 		select {
@@ -108,10 +108,17 @@ func (nctx *TCPContext) readLoop() {
 				default:
 					if err == io.EOF {
 						nctx.Close()
-					} else if err.(net.Error).Timeout() {
-						nctx.handleTimeout()
 					} else {
-						nctx.handleError(err)
+						nerr, ok := err.(net.Error)
+						if ok {
+							if nerr.Timeout() {
+								nctx.handleTimeout()
+							} else {
+								nctx.handleError(err)
+							}
+						} else {
+							nctx.handleError(err)
+						}
 					}
 				}
 				continue
@@ -123,12 +130,12 @@ func (nctx *TCPContext) readLoop() {
 	}
 }
 
-func (nctx *TCPContext) prepareRead() {
+func (nctx *SoContext) prepareRead() {
 	nctx.rollback = false
 	nctx.buffer.Reserve(4096)
 }
 
-func (nctx *TCPContext) handleConnect() bool {
+func (nctx *SoContext) handleConnect() bool {
 	for _, handler := range nctx.svc.pipeline().connectHandlers {
 		if nctx.svc.isRunning() {
 			if err := handler.OnConnect(nctx); err != nil {
@@ -142,13 +149,13 @@ func (nctx *TCPContext) handleConnect() bool {
 	return true // continue process
 }
 
-func (nctx *TCPContext) handleDisconnect() {
+func (nctx *SoContext) handleDisconnect() {
 	for _, handler := range nctx.svc.pipeline().disconnectHandlers {
 		handler.OnDisconnect(nctx)
 	}
 }
 
-func (nctx *TCPContext) handleRead() {
+func (nctx *SoContext) handleRead() {
 ReadLoop:
 	for {
 		var err error
@@ -176,7 +183,7 @@ ReadLoop:
 	}
 }
 
-func (nctx *TCPContext) handleWrite(out interface{}) {
+func (nctx *SoContext) handleWrite(out interface{}) {
 	var err error
 	for _, handler := range nctx.svc.pipeline().writeHandlers {
 		if nctx.svc.isRunning() {
@@ -208,7 +215,7 @@ func (nctx *TCPContext) handleWrite(out interface{}) {
 	}
 }
 
-func (nctx *TCPContext) handleTimeout() {
+func (nctx *SoContext) handleTimeout() {
 	for _, handler := range nctx.svc.pipeline().timeoutHandlers {
 		if nctx.svc.isRunning() {
 			if err := handler.OnTimeout(nctx); err != nil {
@@ -219,7 +226,7 @@ func (nctx *TCPContext) handleTimeout() {
 	}
 }
 
-func (nctx *TCPContext) handleError(err error) {
+func (nctx *SoContext) handleError(err error) {
 	for _, handler := range nctx.svc.pipeline().errorHandlers {
 		if nctx.svc.isRunning() {
 			handler.OnError(nctx, err)

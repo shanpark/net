@@ -14,8 +14,8 @@ type TCPClient struct {
 	cancelFunc context.CancelFunc
 	doneCh     <-chan struct{}
 
-	nctx            *TCPContext
-	pl              *tcpPipeline
+	nctx            *SoContext
+	pl              *soPipeline
 	optHandler      tcpConnOptHandler
 	readTimeoutDur  time.Duration
 	writeTimeoutDur time.Duration
@@ -24,7 +24,7 @@ type TCPClient struct {
 // NewTCPClient create a new TCPClient.
 func NewTCPClient() *TCPClient {
 	client := new(TCPClient)
-	client.pl = new(tcpPipeline)
+	client.pl = new(soPipeline)
 	client.AddHandler(client.optHandler)
 	return client
 }
@@ -115,7 +115,7 @@ func (c *TCPClient) Write(out interface{}) error {
 	return c.nctx.Write(out)
 }
 
-func (c *TCPClient) pipeline() *tcpPipeline {
+func (c *TCPClient) pipeline() *soPipeline {
 	return c.pl
 }
 

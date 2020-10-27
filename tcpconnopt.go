@@ -11,7 +11,7 @@ type tcpConnOptHandler struct {
 	keepAlivePeriod time.Duration
 }
 
-func (h tcpConnOptHandler) OnConnect(ctx *TCPContext) error {
+func (h tcpConnOptHandler) OnConnect(ctx *SoContext) error {
 	// set no delay option
 	if h.noDelay != nil {
 		ctx.conn.(*net.TCPConn).SetNoDelay(*h.noDelay)
