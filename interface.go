@@ -2,6 +2,7 @@ package net
 
 import "time"
 
+// SoService represents a stream oriented network service object.
 type SoService interface {
 	SetAddress(address string) error
 	AddHandler(handlers ...interface{}) error

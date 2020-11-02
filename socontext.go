@@ -29,6 +29,11 @@ type SoContext struct {
 	rollback   bool
 }
 
+// Conn returns an underlying net.Conn
+func (nctx *SoContext) Conn() net.Conn {
+	return nctx.conn
+}
+
 // Rollback requests that the status of the read operation be rolled back to its last commit state.
 func (nctx *SoContext) Rollback() {
 	nctx.rollback = true

@@ -59,6 +59,28 @@ func (c *TCPClient) SetKeepAlive(keepAlive bool, period time.Duration) error {
 	return nil
 }
 
+// SetLinger sets the behavior of Close on a connection which still has data waiting to be sent or to be acknowledged.
+// refer https://golang.org/pkg/net/#TCPConn.SetLinger
+func (c *TCPClient) SetLinger(sec int) error {
+	c.optHandler.linger = new(int)
+	*c.optHandler.linger = sec
+	return nil
+}
+
+// SetReadBuffer sets the size of the operating system's receive buffer associated with the connection.
+func (c *TCPClient) SetReadBuffer(bytes int) error {
+	c.optHandler.readBuffersize = new(int)
+	*c.optHandler.readBuffersize = bytes
+	return nil
+}
+
+// SetWriteBuffer sets the size of the operating system's transmit buffer associated with the connection.
+func (c *TCPClient) SetWriteBuffer(bytes int) error {
+	c.optHandler.writeBufferSize = new(int)
+	*c.optHandler.writeBufferSize = bytes
+	return nil
+}
+
 // AddHandler adds a handler for network events. A handler should implement at least one of interfaces ReadHandler, WriteHandler, ConnectHandler, DisconnectHandler, ErrorHandler.
 // Handlers are called in order and only in the case of WriteHandler are called in the reverse direction.
 func (c *TCPClient) AddHandler(handlers ...interface{}) error {

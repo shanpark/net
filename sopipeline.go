@@ -2,33 +2,33 @@ package net
 
 import "errors"
 
-// ReadHandler is the interface that wraps the Read event handler method.
+// SoReadHandler is the interface that wraps the Read event handler method.
 type SoReadHandler interface {
 	OnRead(ctx *SoContext, in interface{}) (interface{}, error)
 }
 
-// WriteHandler is the interface that wraps the Write event handler method.
+// SoWriteHandler is the interface that wraps the Write event handler method.
 type SoWriteHandler interface {
 	OnWrite(ctx *SoContext, out interface{}) (interface{}, error)
 }
 
-// ConnectHandler is the interface that wraps the Connect event handler method.
+// SoConnectHandler is the interface that wraps the Connect event handler method.
 type SoConnectHandler interface {
 	OnConnect(ctx *SoContext) error
 }
 
-// DisconnectHandler is the interface that wraps the Disconnect event handler method.
+// SoDisconnectHandler is the interface that wraps the Disconnect event handler method.
 // OnDisconnect method is the only method can be called after the service is stopped.
 type SoDisconnectHandler interface {
 	OnDisconnect(ctx *SoContext)
 }
 
-// TimeoutHandler is the interface that wraps the Timeout event handler method.
+// SoTimeoutHandler is the interface that wraps the Timeout event handler method.
 type SoTimeoutHandler interface {
 	OnTimeout(ctx *SoContext) error
 }
 
-// ErrorHandler is the interface that wraps the Error event handler method.
+// SoErrorHandler is the interface that wraps the Error event handler method.
 type SoErrorHandler interface {
 	OnError(ctx *SoContext, err error)
 }
