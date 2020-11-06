@@ -17,7 +17,7 @@ type TCPServer struct {
 	listener net.Listener // for Server
 	err      error        //
 
-	pl              *soPipeline       // for childService
+	pl              *pipeline         // for childService
 	optHandler      tcpConnOptHandler //
 	readTimeoutDur  time.Duration     //
 	writeTimeoutDur time.Duration     //
@@ -26,7 +26,7 @@ type TCPServer struct {
 // NewTCPServer create a new TCPServer.
 func NewTCPServer() *TCPServer {
 	server := new(TCPServer)
-	server.pl = new(soPipeline)
+	server.pl = new(pipeline)
 	server.AddHandler(server.optHandler)
 	return server
 }
@@ -135,7 +135,7 @@ func (s *TCPServer) Error() error {
 	return s.err
 }
 
-func (s *TCPServer) pipeline() *soPipeline {
+func (s *TCPServer) pipeline() *pipeline {
 	return s.pl
 }
 

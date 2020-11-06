@@ -18,7 +18,7 @@ type TLSClient struct {
 func NewTLSClient(config *tls.Config) *TLSClient {
 	client := new(TLSClient)
 	client.config = config
-	client.pl = new(soPipeline)
+	client.pl = new(pipeline)
 	client.AddHandler(client.optHandler)
 	return client
 }

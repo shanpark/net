@@ -11,7 +11,7 @@ type soChildService struct {
 	doneCh     <-chan struct{}
 }
 
-func (cs *soChildService) pipeline() *soPipeline {
+func (cs *soChildService) pipeline() *pipeline {
 	return cs.s.pipeline()
 }
 

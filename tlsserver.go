@@ -17,7 +17,7 @@ type TLSServer struct {
 func NewTLSServer(config *tls.Config) *TLSServer {
 	server := new(TLSServer)
 	server.config = config
-	server.pl = new(soPipeline)
+	server.pl = new(pipeline)
 	server.AddHandler(server.optHandler)
 	return server
 }

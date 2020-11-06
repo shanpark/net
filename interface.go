@@ -16,7 +16,7 @@ type soAcceptor interface {
 }
 
 type soProperty interface {
-	pipeline() *soPipeline
+	pipeline() *pipeline
 	readTimeout() time.Duration
 	writeTimeout() time.Duration
 }
